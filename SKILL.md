@@ -1,20 +1,77 @@
 ---
 name: workflow-builder
-description: >
-  Build, validate, and deploy Gabriel Operator automation workflows via the API.
-  Use this skill when the user wants to create a browser automation, API pipeline,
-  AI agent workflow, data processing job, or any multi-step automation. Handles all
-  37 action types including navigate, click, fill, goal, rest_api, data_source_read,
-  generate_media, coding_agent, and more. Orchestrates child action-* skills for
-  step-level detail. Use even when the user says "build a workflow", "automate",
-  "create an agent", or describes a multi-step task without naming the platform.
-metadata:
-  author: gabriel-operator
-  version: "1.0"
+description: "Build, validate, and deploy Gabriel Operator automation workflows via the API. Use this skill when the user wants to create a browser automation, API pipeline, AI agent workflow, data processing job, or any multi-step automation. Handles all 37 action types including navigate, click, fill, goal, rest_api, data_source_read, generate_media, coding_agent, and more. Orchestrates child action-* skills for step-level detail. Use even when the user says \"build a workflow\", \"automate\", \"create an agent\", or describes a multi-step task without naming the platform."
 compatibility: Requires Node.js 18+ for script execution (npx tsx).
 ---
 
 # Workflow Builder
+
+## Using this skill in coding agents
+
+Gabriel Operator skills are designed for Claude Code, Codex, Cursor, Hermes, OpenClaw, and any agent that supports skill packs. Work in the git-backed workflow repository connected to your automation.
+
+### Install the skill pack
+
+| Agent | Install |
+|-------|---------|
+| **Claude Code** | `npx skills add go-code-bot/go-workflow-builder-skills` |
+| **Codex** | `codex plugin marketplace add Gabriel-Operator/gabriel-operator-coding-agent-plugin --sparse .agents/plugins` then install the Gabriel Operator plugin |
+| **Cursor** | `npx github:go-code-bot/go-workflow-builder-skills add ./my-workflow` or copy into `.cursor/skills/workflow-builder/` |
+| **Hermes / generic CLI** | `npx github:go-code-bot/go-workflow-builder-skills add ./my-workflow` |
+| **OpenClaw** | `npx skills add go-code-bot/go-workflow-builder-skills` then `openclaw gateway connect --url https://your-openclaw-gateway` |
+| **Gabriel Operator monorepo** | `cp -R server/skills/workflow-builder ./your-git-repo/` |
+
+Alternative curl installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/go-code-bot/go-workflow-builder-skills/main/install.sh | bash
+```
+
+### Modify with your coding agent
+
+1. Open the git-backed workflow repository.
+2. Tell your agent: *"Read `SKILL.md` and update `assets/workflow.json` for \<describe the automation\>. Consult `actions/action-*/SKILL.md` for step-level field shapes. Keep step fields flat at the root — never wrap under `arguments`."*
+3. Scaffold a starting workflow when helpful:
+   ```bash
+   npx tsx scripts/generate-example.ts
+   ```
+4. Validate before committing:
+   ```bash
+   npx tsx scripts/validate-workflow.ts assets/workflow.json
+   ```
+5. Commit and push to the default branch.
+
+**Example prompts by agent:**
+- **Claude Code:** *"Generate and run this Gabriel operator workflow from assets/workflow.json."*
+- **Codex:** *"Validate, generate, and deploy this Gabriel operator workflow."*
+- **Cursor:** *"Install the workflow skill, generate steps, and run the operator loop."*
+- **Hermes:** *"Run the Gabriel operator workflow and poll run status until complete."*
+- **OpenClaw:** *"Scaffold the workflow from the harness steps, validate assets/workflow.json, and execute the operator harness loop."*
+
+### Deploy and run
+
+1. **Validate** (required before deploy):
+   ```bash
+   npx tsx scripts/validate-workflow.ts assets/workflow.json
+   ```
+2. **Deploy** the workflow definition:
+   ```
+   PUT https://gabrieloperator.com/api/automation/build/{automationId}/{actionId}
+   Authorization: Bearer $GABRIEL_TOKEN
+   Content-Type: application/json
+   ```
+3. **Run** the automation:
+   ```bash
+   curl -X POST "https://gabrieloperator.com/api/automation/run/$AGENT_ID/$ACTION_ID" \
+     -H "Authorization: Bearer $GABRIEL_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{}'
+   ```
+4. Poll run status via the automation API or Gabriel UI until the harness loop completes (including any confirmation gates).
+
+See `runner/SKILL.md` in git-backed workflow repos for run-specific details generated at repository initialization.
+
+---
 
 ## Git-backed action repositories
 When this skill is materialized as a git repository for a single automation action, the repo includes the scaffold under `actions/`, `scripts/`, `references/`, plus:
@@ -56,9 +113,21 @@ If the user does not explicitly request browser automation, **always default to 
 }
 ```
 
-### Rule 2 — Steps 2+ MUST use `mcp_tool` backed by a Composio toolkit
+### Rule 2 — In browserless workflows, prefer no-browser actions and Composio-backed `mcp_tool`
 
-All steps after the first **must** use `action_type: "mcp_tool"`. Each step must be backed by the most appropriate **Composio toolkit** for the task. Write a focused `systemPrompt` (agent role + context) and a specific `userPrompt` (exact task to execute).
+For browserless workflows (`step 1 = navigate` with `disableBrowser: true`), **prefer** `action_type: "mcp_tool"` backed by the most appropriate **Composio toolkit** for the task. Write a focused `systemPrompt` (agent role + context) and a specific `userPrompt` (exact task to execute).
+
+Other no-browser action types are also valid when they fit the task, including:
+- `rest_api`
+- `llm_rest_api`
+- `data_source_read`
+- `data_source_write`
+- `api_output`
+- `notification`
+- `wait`
+- `confirmation`
+
+Do **not** use browser-required steps when the first step has `disableBrowser: true`.
 
 ```json
 {
@@ -269,7 +338,7 @@ Use the workflow type to select appropriate action types and avoid using browser
 | Type | What the user chose | Key action types to use | Avoid |
 |------|--------------------|--------------------------|----|
 | **Browser agent** | "Browser agent — navigates websites, fills forms, clicks buttons" | `navigate`, `click`, `fill`, `type`, `goal`, `scroll`, `hover`, `screenshot` | `rest_api`, `api_call` as primary |
-| **Browserless** | "Browserless — API calls, data processing, integrations (no browser)" | `rest_api`, `llm_rest_api`, `data_source_read`, `data_source_write`, `api_output`, `notification` | any browser action |
+| **Browserless** | "Browserless — API calls, data processing, integrations (no browser)" | `mcp_tool`, `rest_api`, `llm_rest_api`, `data_source_read`, `data_source_write`, `api_output`, `notification`, `confirmation` | any browser-required action |
 | **Explainer** | "Explainer — explain and document the existing workflow steps" | Read existing `assets/workflow.json` only; output a markdown explanation; do NOT modify steps | — |
 
 If no type prefix is present (the user is editing an existing workflow), infer the type from the existing steps.
@@ -371,7 +440,7 @@ Load the relevant child skill for each step type you need:
 | `llm` | `action-llm` | LLM vision-guided click/fill/extract |
 | `llm_command` | `action-llm-command` | LLM-generated browser command |
 | `goal` | `action-goal` | Autonomous AI agent (multi-step browsing) |
-| `confirmation` | `action-confirmation` | Pause for user confirmation |
+| `confirmation` | `action-confirmation` | Pause for structured confirmation or retry guidance |
 | `manual_extract` | `action-manual-extract` | AI-assisted data extraction |
 | `continuous_screenshots` | `action-continuous-screenshots` | Periodic capture + analysis |
 | `image_response` | `action-image-response` | Capture page images |
@@ -406,6 +475,7 @@ Based on the user's goal, determine which action types are needed. Common patter
 - **Web scraping**: `navigate` → `goal` or `click`/`fill` sequence → `manual_extract` or `api_output`
 - **API pipeline**: `rest_api` → `llm_rest_api` → `api_output`
 - **AI browsing agent**: `navigate` → `goal` → `confirmation`
+- **Browserless approval gate**: `navigate` (`disableBrowser: true`) → `mcp_tool`/`rest_api` → `confirmation`
 - **Data ETL**: `data_source_read` → `llm_rest_api` (transform) → `data_source_write`
 - **Media generation**: `generate_media` → `stitch_videos` → `notification`
 
@@ -421,6 +491,136 @@ Each step must have:
 - `label` — short human-readable description of the step (REQUIRED)
 - `intent` — rich purpose, variable documentation, and acceptance criteria for this step (REQUIRED)
 - `selectorPrompts` with `userPrompt` — vision fallback (REQUIRED for all selector-based browser steps: click, fill, type, hover, select, scroll)
+
+## Structured confirmation steps
+
+`confirmation` now supports **structured inline questions** in both web and mobile chat surfaces and can be used in both:
+- browser workflows
+- browserless workflows
+
+`confirmation` is **not** browser-required. It is valid even when step 1 has `disableBrowser: true`.
+
+### Authoring rules
+
+- Put all confirmation fields at the **root** of the step object.
+- Use `userPrompt` for the question text shown to the user.
+- Use `confirmationConfig` to define how the user should answer and what happens next.
+- `userPrompt` supports runtime variable interpolation from earlier step outputs, for example `{{step-abc12.companyName}}`.
+- When authoring confirmation prompts, only reference variables that were explicitly exported/configured on previous steps.
+
+### Confirmation schema
+
+```json
+{
+  "step_number": 6,
+  "action_type": "confirmation",
+  "stepId": "step-cf123",
+  "label": "Confirm enriched lead",
+  "intent": "**Input:** `{{step-a1b2c.companyName}}` is the company name exported by step 4 (Enrich lead).\\n\\n**Processing:** Pauses the run and asks the user to confirm whether the enriched result looks correct before continuing.\\n\\n**Output:** Exports `answer`, `answerId`, `answerLabel`, and `confirmed` for downstream branching, logging, or notifications.",
+  "userPrompt": "I found {{step-a1b2c.companyName}} as the best match. Should I continue?",
+  "confirmationConfig": {
+    "answerMode": "yes_no",
+    "postAnswer": "continue"
+  },
+  "timestamp": 1710000006000
+}
+```
+
+### `confirmationConfig`
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `answerMode` | `"yes_no" \| "freeform" \| "multiple_choice"` | Yes | Controls the UI shown to the user |
+| `options` | array | Only for `multiple_choice` | Provide non-empty labeled options |
+| `postAnswer` | `"continue" \| "retry_from_step"` | Yes | Continue the run or restart from an earlier step |
+| `retryFromStepNumber` | number | Required when `postAnswer = "retry_from_step"` | Must be an earlier step number |
+
+### Answer modes
+
+#### 1. `yes_no`
+Use when the user should explicitly approve or reject the next action.
+
+```json
+"confirmationConfig": {
+  "answerMode": "yes_no",
+  "postAnswer": "continue"
+}
+```
+
+#### 2. `freeform`
+Use when the user needs to type a short explanation, correction, or instruction.
+
+```json
+"confirmationConfig": {
+  "answerMode": "freeform",
+  "postAnswer": "continue"
+}
+```
+
+#### 3. `multiple_choice`
+Use when the user should choose from authored options.
+
+```json
+"confirmationConfig": {
+  "answerMode": "multiple_choice",
+  "options": [
+    { "id": "cheapest", "label": "Use the cheapest option" },
+    { "id": "healthiest", "label": "Use the healthiest option" },
+    { "id": "skip", "label": "Do not proceed" }
+  ],
+  "postAnswer": "continue"
+}
+```
+
+### Retry-from-step flows
+
+When `postAnswer` is `retry_from_step`, the confirmation step becomes a structured retry checkpoint:
+
+- the run pauses and asks the question inline
+- the user can answer normally
+- if the target client supports it, the user can also provide retry guidance
+- the runtime restarts from `retryFromStepNumber`
+
+Important:
+- `retryFromStepNumber` must point to an earlier step
+- the runtime automatically derives retry inputs from the steps between the retry target and the confirmation step
+- do **not** author `retryInputs` manually in the step JSON
+- downstream retry payloads may include natural-language retry notes and manual field overrides
+
+Example:
+
+```json
+{
+  "step_number": 8,
+  "action_type": "confirmation",
+  "stepId": "step-retry1",
+  "label": "Review extracted invoice fields",
+  "intent": "**Input:** Uses the extracted invoice fields from steps 4 through 7.\\n\\n**Processing:** Pauses the run so the user can verify the extracted values and decide whether to continue or retry from the extraction stage.\\n\\n**Output:** Exports `answer`, `answerId`, `answerLabel`, and `confirmed`. If the user requests a retry, the run restarts from step 4 with any provided retry guidance.",
+  "userPrompt": "Please review the extracted invoice fields. If something looks wrong, retry from the extraction step.",
+  "confirmationConfig": {
+    "answerMode": "yes_no",
+    "postAnswer": "retry_from_step",
+    "retryFromStepNumber": 4
+  }
+}
+```
+
+### Variables emitted by confirmation
+
+After the user answers, the confirmation step can expose these outputs for later steps:
+
+| Variable | Meaning |
+|---|---|
+| `answer` | Final answer text |
+| `answerId` | Selected option ID, when applicable |
+| `answerLabel` | Selected option label, when applicable |
+| `confirmed` | Boolean confirmation state when answer maps to yes/no |
+
+Example usage:
+
+```json
+"userPrompt": "The reviewer answered: {{step-cf123.answer}}"
+```
 
 ### Step 4: Add cross-cutting features (optional)
 Any step can have guards, hooks, evals, and narration. See [references/CROSS-CUTTING.md](references/CROSS-CUTTING.md) for details.
@@ -462,6 +662,66 @@ Steps can reference outputs from previous steps using the `{{stepId.variable}}` 
   "url": "https://api.example.com/users/{{step-714da.userId}}"
 }
 ```
+
+## Exported variables (step outputs)
+
+Steps can expose data they produce so downstream steps and connectors can reference it.
+
+### `exportedVariables`
+
+Maps a variable name to the dot-path where the runtime should read its value from the step's execution result:
+
+```json
+"exportedVariables": {
+  "userId": "response.data.id",
+  "profileUrl": "url",
+  "fileSize": "metadata.size"
+}
+```
+
+Referenced in later steps as `{{stepId.variableName}}`, e.g. `{{step-714da.userId}}`.
+
+Common source paths by action type:
+
+| Action type | Typical source paths |
+|-------------|----------------------|
+| `download` | `filePath`, `fileName`, `url` |
+| `fill` / `type` | `value` |
+| `rest_api` / `api_call` | `response`, `statusCode`, `response.data.<field>` |
+| `navigate` | `url` |
+| `llm` / `goal` | `response`, `extractedData.<field>` |
+| `mcp_tool` | `response`, `response.<field>` |
+
+### `exportedVariableDescriptions`
+
+For each variable in `exportedVariables`, you can add a natural-language description that the AI intake agent will use when asking the user to provide values. Without a description, the agent only has the variable name — with one, it can phrase its question clearly and naturally.
+
+```json
+"exportedVariables": {
+  "searchQuery": "value",
+  "profileName": "response.name"
+},
+"exportedVariableDescriptions": {
+  "searchQuery": "The keyword or name to search for on LinkedIn",
+  "profileName": "The full name of the LinkedIn profile to extract"
+}
+```
+
+**When to set `exportedVariableDescriptions`:**
+- The variable name alone is cryptic (e.g. `v1`, `param`, `data`)
+- The variable holds user-supplied data (names, queries, IDs, dates) that the AI will need to ask about
+- Multiple steps export similarly-named variables and you want to disambiguate
+
+**What to write:** One sentence describing what the value represents in the real world and, if relevant, what format it should be in. Do NOT describe the technical path — describe what the user would understand.
+
+Good examples:
+- `"The company name to search for in the database"`
+- `"The recipient's email address for the notification"`
+- `"The LinkedIn profile URL or full name of the target person"`
+
+Bad examples (too technical):
+- `"response.data.id field from step 3"` — describes the path, not the value
+- `"string value"` — no useful context
 
 ## Available scripts
 

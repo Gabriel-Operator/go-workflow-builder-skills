@@ -1,0 +1,5 @@
+interface:
+  display_name: "Workflow Builder"
+  short_description: "Build Gabriel automation workflows."
+  brand_color: "#2563EB"
+  default_prompt: "Use $workflow-builder to build or update a Gabriel Operator automation workflow."
