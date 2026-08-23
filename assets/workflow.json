@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "resourceKey": "workflow.example.open-page.v2",
+  "commitMessage": "Workflow template: auto recovery off by default",
+  "structure": {
+    "name": "Example workflow",
+    "actionName": "Example workflow",
+    "actionIndex": 0,
+    "baseUrl": "https://example.com",
+    "screenshotEnabled": false,
+    "autoRecoveryEnabled": false,
+    "parameters": {
+      "execute": []
+    },
+    "steps": [
+      {
+        "step_number": 1,
+        "action_type": "navigate",
+        "stepId": "step-a1b2c",
+        "url": "https://example.com",
+        "label": "Open example"
+      }
+    ],
+    "groups": []
+  }
+}

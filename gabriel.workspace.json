@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "scaffold": "workflow-builder",
+  "kind": "workflow",
+  "validators": [
+    {
+      "runner": "tsx",
+      "script": "scripts/validate-workflow.ts",
+      "assetPath": "assets/workflow.json",
+      "mode": "required"
+    }
+  ]
+}

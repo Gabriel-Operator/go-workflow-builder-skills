@@ -1,10 +1,59 @@
 ---
 name: workflow-builder
-description: "Build, validate, and deploy Gabriel Operator automation workflows via the API. Use this skill when the user wants to create a browser automation, API pipeline, AI agent workflow, data processing job, or any multi-step automation. Handles all 37 action types including navigate, click, fill, goal, rest_api, data_source_read, generate_media, coding_agent, and more. Orchestrates child action-* skills for step-level detail. Use even when the user says \"build a workflow\", \"automate\", \"create an agent\", or describes a multi-step task without naming the platform."
-compatibility: Requires Node.js 18+ for script execution (npx tsx).
+description: >
+  Build, validate, and deploy Gabriel Operator automation workflows via the API.
+  Use this skill when the user wants to create a browser automation, API pipeline,
+  AI agent workflow, data processing job, or any multi-step automation. Handles all
+  39 action types including navigate, click, fill, goal, rest_api, data_source_read,
+  generate_media, coding_agent, and more. Orchestrates child action-* skills for
+  step-level detail. Use even when the user says "build a workflow", "automate",
+  "create an agent", or describes a multi-step task without naming the platform.
+metadata:
+  author: gabriel-operator
+  version: "1.2"
+  compatibility: Requires Node.js 18+ for script execution (npx tsx).
 ---
 
 # Workflow Builder
+
+## Portable Git contract (schema v2)
+
+New workflow repositories must use a stable resource key and portable dependency refs:
+
+```json
+{
+  "schemaVersion": 2,
+  "resourceKey": "workflow.example.fulfil-v2",
+  "structure": {
+    "steps": [{
+      "stepId": "review",
+      "execution": {
+        "type": "pipeline_transition",
+        "pipelineRef": { "kind": "pipeline", "resourceKey": "pipeline.example.fulfil-v2" },
+        "transitionId": "review"
+      }
+    }]
+  }
+}
+```
+
+- Never commit `actionId`, `automationId`, `pageId`, `pipelineId`, `collectionId`, or other database IDs to portable workflow JSON or generated connection diagrams.
+- When publishing through a Persona bundle, update the Persona registry entry with the exact Workflow commit `revision` and the SHA-256 `definitionFingerprint` of `assets/workflow.json`.
+- Use `pipelineRef` everywhere an authored Canvas task depends on a Pipeline, including expanded tasks and the aggregate Canvas definition.
+- Keep `stepId`, `canvasTaskId`, `sequenceId`, transition IDs, and dependency IDs stable; they are logical model IDs.
+- Ensure the Persona registry declares the Workflow and every transitive Pipeline/List dependency before publishing.
+- Import resolves refs into environment-local IDs before execution. Runtime runs and audit records may store those resolved IDs; Git must not.
+- Legacy schema v1 runs only when its exact local IDs exist. Never copy v1 between environments or generate a new v1 export.
+
+This scaffold declares its required validator in root `gabriel.workspace.json`. Keep that
+manifest, `scripts/validate-workflow.ts`, and `assets/workflow.json` together. In a Persona
+workspace, commit and push this repository first; the parent publisher verifies that the
+pinned SHA is reachable from this repo's declared branch before advancing the Persona lock.
+Several commands may share this Workflow's one registry entry.
+Unmarked older child repos use the parent's loud legacy-validator fallback. Do not remove
+this marker from new repos. If the parent reports a stale link, run its `prune`; it removes
+only Git metadata and preserves this checkout. Never publish the parent before this child
+commit is pushed.
 
 ## Using this skill in coding agents
 
@@ -78,6 +127,45 @@ When this skill is materialized as a git repository for a single automation acti
 - `/assets/workflow.json` — canonical step payload for that action.
 - `/runner/SKILL.md` — generated on repository initialization; documents how to start runs and poll status via the automation HTTP API (`POST /api/automation/run/:agentId/:actionId`).
 
+The HTTP path above uses resolved runtime IDs. Those values are supplied by the current environment and must never be copied back into `assets/workflow.json`.
+
+### Inside a Persona workspace
+
+This repository is usually a **git submodule** of an AI Persona repository, at
+`references/workflows/<resource-key>/`. The parent owns `references/registry.json`, which
+pins **exactly one** portable workflow (plus the pipeline and list). Extra slash-command
+workflows are depth-1 checkouts too, but they live in generated
+`references/workspace.json`, not as extra portable registry kinds. After changing this
+definition, commit and push here **first**, then publish the parent workspace. Until you
+do, the Persona still resolves the previous commit. The parent root is coordinated
+authoring, not an atomic multi-repo commit.
+
+A Persona may link several workflow repositories. Exactly one is the portable
+`workflowRef` named in `registry.json` — that is the workflow import materializes as the
+published command. Adding a second workflow repo does not repoint the Persona; changing
+`workflowRef` does. Do not mark rows `"primary": true` and do not add `team_agent` to the
+portable registry.
+
+### Persona slash-command repositories
+
+If `/assets/persona-command.json` exists, this workflow is the executable half of a persona slash command. Before explaining or changing it:
+
+1. Read `/skills/persona-command/SKILL.md` and `/assets/persona-command.json`.
+2. Read this repository's debug/docs assets first:
+   - `/assets/workflow.json` — executable steps
+   - `/assets/slash-connections.json` — slash-command connection debug graph
+   - `/skills/persona-command/SKILL.md` — authoring guidance for this command
+3. Open the parent persona repository only for **registration** fields in `/assets/chat-config.json` (`agentTopology.slashCommands`: id, trigger, label, description, enabled, presentation, Operator action reference).
+4. First summarize what the connected command currently implements, then ask what the author wants to explain, extend, or modify unless a concrete change was already requested.
+5. **Do not** create or edit `assets/slash-connections/` (or any slash-command debug definitions) in the parent persona chat-config repository. Debug/docs for slash commands are owned by this workflow repository and the workflow-builder skill.
+
+#### Ownership split
+
+| Location | Owns |
+|----------|------|
+| Parent `assets/chat-config.json` | Runtime registration only: trigger, label, description, enabled, presentation, Operator action linkage |
+| This workflow repo | Executable workflow, prompts, I/O, generated child skills, **slash-connection debug graph** (`assets/slash-connections.json`), persona-command authoring skill |
+
 ## ⚠️ Critical: Flat step structure — most common mistake
 
 ALL step fields belong at the **ROOT level** of the step object. Never wrap them under
@@ -107,7 +195,7 @@ If the user does not explicitly request browser automation, **always default to 
   "disableBrowser": true,
   "url": "",
   "selectors": [],
-  "label": "Browserless automation",
+  "label": "Workflow Start",
   "step_number": 1,
   "stepId": "step-XXXXX"
 }
@@ -205,6 +293,108 @@ Install composio skills pack: `npx skills add composiohq/skills`
 
 **systemPrompt tips:** State the agent's role clearly, include the service name, and describe what a successful outcome looks like.
 **userPrompt tips:** Be specific. Include filters, field names, counts, or any constraints the user provided.
+
+### Rule 3 — Workflow-authored Canvas must always use `blueprintRef: "inline"`
+
+Every `persona_capability` step with `kind: "canvas_task_execution"` must set:
+
+```json
+"blueprintRef": "inline"
+```
+
+Set it in both places when the Canvas is expanded across multiple workflow steps:
+
+- `personaCapabilityConfig.execution.canvas.blueprintRef`
+- the terminal step's `personaCapabilityConfig.canvasTask.aggregateCanvas.blueprintRef`
+
+Never use `"page"`, a page id, a sequence id, a product name, or any other custom string as
+`blueprintRef`. The old `"page"` mode depends on a deprecated page-level master-skill blueprint
+and is retained only so existing stored executions can migrate. A workflow already owns its Canvas
+task catalog, so `"inline"` is the only valid authoring mode. Use `canvasTask.sequenceId` for the
+stable workflow/playbook identity; do not overload `blueprintRef` with that identity.
+
+### Rule 4 — Acquisition-backed Canvas uses presentation tasks, not scraping steps
+
+When a pipeline transition declares `acquisition`, the workflow must not repeat
+that external read with `goal`, `manual_extract`, Firecrawl, or custom browser
+steps. The shared acquisition executor owns cache-first/API-first/browser-last
+selection; the workflow only defines the Canvas sequence.
+
+For an Archer-style form playbook, author exactly three contiguous
+`persona_capability` Canvas tasks after the browserless bootstrap:
+
+1. Analyze: `presentation.kind: "schema_form_questions"`, `artifactPolicy: "none"`.
+2. Collect/review: `presentation.kind: "schema_form_answer_review"`,
+   `requiresApproval: true`, `autoApprove: false`, `artifactPolicy: "none"`.
+3. Fill/submit: `artifactPolicy: "explicit_only"`, user-visible mappings only
+   for screenshots (`image`) and browser recording (`video`), and
+   `playbookEntrypointId: "execute"`.
+
+For a `channels_only` questionnaire, submitting the trusted response form (or
+confirming its exact preview in voice) is the task's explicit human approval.
+Keep `requiresApproval: true`: after the Collect transition commits, Canvas
+records the matching run-and-answer approval and proceeds directly to
+Fill/submit. Do not author a second Looks good/Improve approval step for the
+same answers. If the approval record cannot be written, runtime falls back to
+the normal explicit Canvas review and fails closed.
+
+Never emit transition summaries, URLs, schemas, answers, fingerprints, or
+playbook JSON as artifacts. All pipeline task transitions are `manual`, have
+`autoFireOnEntry: false`, and map one Canvas task to one transition. The execute
+entrypoint belongs only on the final task and may not permit a form URL override.
+
+For model-driven prior-case detection, set one `existingCasePolicyId` on the
+shared Canvas definition (and therefore the terminal aggregate Canvas). Do not
+add a separate "check previous submission" Canvas task or place prior answers in
+workflow JSON. The standard slash-command launcher asks Reuse / Start fresh
+before execution exists; dismissing the prompt is the non-mutating cancel path.
+The Analyze task then reconciles referenced answers against the newly acquired
+trusted schema and continues to the normal review gate. Reconciled values are
+prefill only: even when every prior answer remains compatible, Canvas must show
+the current full Q&A and obtain a new explicit confirmation before executing the
+Collect transition. Never turn a fully reusable answer bag into a synthetic
+completed response.
+
+The referenced policy is authored under **Pipeline → Manage → Config →
+Existing-case detection**. Workflow owns only the stable policy ID. Never copy
+`locatorField`, `identityField`, answer fields, or lineage mappings into the Canvas
+configuration. The policy locator must match the Analyze acquisition locator; for
+example, a policy using `product_url` cannot launch an Analyze transition still
+configured for `form_url`. Cross-asset validation must reject that mismatch.
+
+For a task-scoped questionnaire, put `responseCollection` on both the expanded
+Canvas task and its matching `taskTypes[]` entry:
+
+```json
+{
+  "responseCollection": {
+    "mode": "channels_only",
+    "questionsField": "form_fields",
+    "answersInputKey": "form_answers",
+    "allowedChannels": ["in_app_voice", "phone", "email", "persona_channels"]
+  }
+}
+```
+
+`channels_only` deliberately removes the inline/chat answer form. Linked Persona
+Chat apps such as Slack, Discord, Telegram, and WhatsApp receive a single-use
+questionnaire for this Canvas task; they do not start or reuse general Persona
+chat. A submitted questionnaire is an explicit confirmation of the displayed
+values; voice must preview the exact normalized values and obtain an affirmative
+confirmation before its answer tool may submit them. Do not create a team-agent `suspend_resume` workflow merely to collect
+these answers. Canvas owns the durable response session, and the pipeline's
+workflowless transition validates and commits the returned data. The normal
+Filer path must not run a live `schema_form_dry_run` here: doing so opens the
+external browser once during Collect and again during Fill/submit. Fill/submit
+is the single browser execution after answer confirmation. If a deployment
+explicitly needs live conditional discovery, model it as a separate user-visible
+suspension rather than silently duplicating the submission automation.
+
+The final Fill/submit task must map both `evidence_screenshots` and
+`evidence_recording` as explicit media. Runtime preserves any recording emitted
+after the browser session starts even when submission fails or becomes
+uncertain, so recovery UI can show what happened without treating evidence as a
+successful business transition.
 
 ---
 
@@ -380,7 +570,8 @@ The canonical workflow file lives at `assets/workflow.json`. Its top-level shape
 
 ```json
 {
-  "actionId": "<action-id>",
+  "schemaVersion": 2,
+  "resourceKey": "workflow.example.run-v2",
   "structure": {
     "name": "Internal label",
     "actionName": "Human-readable title",
@@ -400,7 +591,8 @@ The canonical workflow file lives at `assets/workflow.json`. Its top-level shape
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `actionId` | Yes | Action identifier this repo is bound to |
+| `schemaVersion` | Yes | Use `2` for a portable workflow. |
+| `resourceKey` | Yes | Stable model identity resolved to a local action during import. |
 | `structure.name` | Yes | Internal workflow label |
 | `structure.actionName` | Yes | Display title shown to users |
 | `structure.baseUrl` | Yes | Base URL prefix (empty string if steps use absolute URLs) |
@@ -466,6 +658,7 @@ Load the relevant child skill for each step type you need:
 | `stitch_videos` | `action-stitch-videos` | Combine video clips |
 | `coding_agent` | `action-coding-agent` | Sandbox code execution |
 | `computer_use_agent` | `action-computer-use-agent` | Computer use in sandbox |
+| `persona_capability` | `action-persona-capability` | Delegate to a persona tool, Canvas task, retained skill, or workflow endpoint |
 
 ## How to build a workflow
 

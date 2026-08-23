@@ -35,6 +35,8 @@ curl -fsSL https://raw.githubusercontent.com/go-code-bot/go-workflow-builder-ski
 
 ```
 SKILL.md                          ← Main workflow-builder instructions for AI agents
+gabriel.workspace.json           ← Required validator declaration for workspace publishers
+assets/workflow.json             ← Portable schema-v2 example definition
 scripts/
   validate-workflow.ts            ← Validate a workflow.json against the full schema
   generate-example.ts             ← Generate an example workflow for a given scenario
@@ -48,7 +50,7 @@ actions/
   action-navigate/SKILL.md
   action-goal/SKILL.md
   action-rest-api/SKILL.md
-  … (37 action types total)
+  … (39 action types total)
 ```
 
 ---
@@ -57,8 +59,8 @@ actions/
 
 After installing, the `SKILL.md` file at the root is the primary entry point for AI agents. It documents:
 
-- All 37 supported action types
-- Required fields (`label`, `comment`, `selectorPrompts`) on every step
+- All 39 supported action types
+- Required fields (`label`, `intent`, `selectorPrompts`) on every step
 - Step JSON schema and flat structure rules
 - How to validate and build workflows
 
@@ -83,7 +85,7 @@ npx tsx scripts/generate-example.ts
 | Browser navigation | `navigate`, `click`, `fill`, `type`, `hover`, `select`, `scroll`, `manual_scroll`, `keypress`, `keyboard_type`, `upload`, `download`, `screenshot`, `switch_tab`, `blank_step`, `take_control` |
 | AI/LLM | `llm`, `llm_command`, `goal`, `confirmation`, `manual_extract`, `continuous_screenshots`, `image_response`, `pdf_response` |
 | API & Data | `api_call`, `rest_api`, `llm_rest_api`, `mcp_tool`, `data_source_read`, `data_source_write`, `api_output`, `notification`, `wait` |
-| Media & Sandbox | `generate_media`, `stitch_videos`, `coding_agent`, `computer_use_agent` |
+| Media, Sandbox & Persona | `generate_media`, `stitch_videos`, `coding_agent`, `computer_use_agent`, `persona_capability` |
 
 ---
 
@@ -100,3 +102,12 @@ Content-Type: application/json
 ## License
 
 MIT
+
+## Persona workspaces
+
+The root `gabriel.workspace.json` makes validation explicit. Unmarked legacy children use
+a loud compatibility fallback; marked children fail when required validators are missing.
+Commit and push this child first. Parent publish accepts a detached pin behind the declared
+branch, but rejects a wrong origin, missing branch, or local-only commit. Multiple commands
+may share this Workflow's single registry row. Parent `prune` removes only validated Git
+metadata and always preserves the checkout.
