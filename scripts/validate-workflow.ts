@@ -7,8 +7,9 @@
  *   npx tsx server/skills/workflow-builder/scripts/validate-workflow.ts <file.json>
  */
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { validateLocalPreviewPackage } from './validate-preview-package';
 
 const VALID_ACTION_TYPES = [
   "navigate",
@@ -727,6 +728,16 @@ function main(): void {
   }
 
   validateWorkflow(data);
+  const commandPath = resolve(dirname(absPath), 'persona-command.json');
+  if (existsSync(commandPath)) {
+    try {
+      const command = JSON.parse(readFileSync(commandPath, 'utf8'));
+      if (command.workflowSkill) {
+        const packageFingerprint = validateLocalPreviewPackage(resolve(dirname(absPath), '..'), command.workflowSkill);
+        console.log(`Workflow preview package: ${packageFingerprint}`);
+      }
+    } catch (error) { err('workflowSkill', (error as Error).message); }
+  }
 
   if (errors.length > 0) {
     console.error(`Validation failed with ${errors.length} error(s):\n`);
