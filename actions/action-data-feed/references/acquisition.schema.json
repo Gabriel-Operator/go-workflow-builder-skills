@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Data Feed type and acquisition contract",
+  "type": "object",
+  "properties": {
+    "type": {
+      "enum": [
+        "email",
+        "file",
+        "transaction",
+        "calendar",
+        "message",
+        "portal",
+        "source"
+      ]
+    },
+    "outputKind": {
+      "enum": [
+        "entities",
+        "sources"
+      ]
+    },
+    "acquisition": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "on_demand",
+            "push",
+            "pull",
+            "watch",
+            "scheduled",
+            "event_driven",
+            "user_solicited",
+            "device_captured"
+          ]
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowUserRequest": {
+              "type": "boolean"
+            },
+            "allowDeviceCapture": {
+              "type": "boolean"
+            },
+            "requestPrompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "observationInput": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            }
+          }
+        },
+        "checkpoint": {
+          "type": "object",
+          "required": [
+            "inputParameter",
+            "outputPath"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "inputParameter": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+            },
+            "outputPath": {
+              "type": "string",
+              "maxLength": 500,
+              "pattern": "^(?:$|/)(?:[^~]|~[01])*$"
+            }
+          }
+        },
+        "observations": {
+          "type": "object",
+          "required": [
+            "recordsPath"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "recordsPath": {
+              "type": "string",
+              "maxLength": 500,
+              "pattern": "^(?:$|/)(?:[^~]|~[01])*$"
+            },
+            "identityPath": {
+              "type": "string",
+              "maxLength": 500,
+              "pattern": "^(?:$|/)(?:[^~]|~[01])*$"
+            },
+            "observedAtPath": {
+              "type": "string",
+              "maxLength": 500,
+              "pattern": "^(?:$|/)(?:[^~]|~[01])*$"
+            },
+            "provenancePath": {
+              "type": "string",
+              "maxLength": 500,
+              "pattern": "^(?:$|/)(?:[^~]|~[01])*$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "acquisition"
+        ]
+      },
+      "then": {
+        "required": [
+          "type"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "source"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "outputKind",
+          "ontology"
+        ],
+        "properties": {
+          "outputKind": {
+            "const": "sources"
+          },
+          "ontology": {
+            "required": [
+              "entityType"
+            ],
+            "properties": {
+              "entityType": {
+                "const": "Source"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition": {
+            "properties": {
+              "mode": {
+                "const": "user_solicited"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        },
+        "required": [
+          "acquisition"
+        ]
+      },
+      "then": {
+        "properties": {
+          "acquisition": {
+            "required": [
+              "policy"
+            ],
+            "properties": {
+              "policy": {
+                "required": [
+                  "allowUserRequest",
+                  "requestPrompt",
+                  "observationInput"
+                ],
+                "properties": {
+                  "allowUserRequest": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition": {
+            "properties": {
+              "mode": {
+                "const": "device_captured"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        },
+        "required": [
+          "acquisition"
+        ]
+      },
+      "then": {
+        "properties": {
+          "type": {
+            "const": "file"
+          },
+          "acquisition": {
+            "required": [
+              "policy"
+            ],
+            "properties": {
+              "policy": {
+                "required": [
+                  "allowDeviceCapture",
+                  "observationInput"
+                ],
+                "properties": {
+                  "allowDeviceCapture": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

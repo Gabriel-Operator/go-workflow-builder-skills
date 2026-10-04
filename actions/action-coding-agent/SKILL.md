@@ -12,6 +12,10 @@ metadata:
 
 # Coding Agent
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Coding execution is desktop-only and requires an installed local adapter and sandbox. It is blocked on phone and in embedded runtimes that do not report the adapter. Classify any nested network tools independently.
+
 ## Action type
 
 - **action_type**: `coding_agent`

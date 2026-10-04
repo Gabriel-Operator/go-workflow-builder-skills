@@ -12,6 +12,10 @@ metadata:
 
 # action-confirmation
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Author embedded approvals as `approval.request`. The runner persists the pending schema and checkpoint locally and resumes only after explicit input; synchronization does not approve or resume it.
+
 ## Action overview
 
 | Property | Value |

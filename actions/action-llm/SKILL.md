@@ -13,6 +13,10 @@ metadata:
 
 # action-llm
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Offline inference must be authored as `prompt.local`, requires an installed selected model, and validates structured JSON when an output schema is present. Screenshot/browser reasoning remains unavailable unless a desktop adapter is explicitly reported.
+
 ## Action overview
 
 | Property | Value |

@@ -12,6 +12,10 @@ metadata:
 
 # Generate Media
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Local media generation is available only when the runtime reports the required installed model and hardware capability. Hosted image, video, audio, and avatar providers require connectivity. Store local outputs as artifact records and do not upload them automatically.
+
 ## Action type
 
 - **action_type**: `generate_media`

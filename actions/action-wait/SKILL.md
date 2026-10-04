@@ -11,6 +11,10 @@ metadata:
 
 # action-wait
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Author embedded waits as `wait.durable` with an absolute `until` time. Desktop resumes while running; mobile resumes when the app is active again. Never rely on a phone process remaining alive in the background.
+
 ## Action overview
 
 | Property | Value |

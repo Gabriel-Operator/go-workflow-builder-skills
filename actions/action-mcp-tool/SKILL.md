@@ -12,12 +12,18 @@ metadata:
 
 # MCP Tool
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). MCP calls are offline blockers unless the runtime reports an installed local MCP adapter. Contract v1 does not expose one through the embedded runner, so preserve the checkpoint and ask the user to choose an online or supported desktop path.
+
 ## Action type
 
 - **action_type**: `mcp_tool`
 - **Requires browser**: No
 
 ## What it does
+
+Inside a Persona Data Feed, author an exact `mcpToolName` and object `mcpToolArguments`, plus a direct HTTPS `mcpServerUrl` on the feed’s allowed services. The feed interpreter calls that tool and returns its structured JSON (or JSON text) to the parent playbook. It does not use the legacy LLM selection or saved server credentials. Authentication uses `mcpApiKey: "{{credentials.slot}}"` from Persona mobile Guardians; redirects and undeclared services are blocked. Source instances and List records are written only by a subsequent authorized mapping step.
 
 The MCP tool step calls an external Model Context Protocol (MCP) server to invoke a tool. MCP is a standardized protocol for connecting AI models to external tools and data sources. This step lets workflows tap into any MCP-compatible service — databases, file systems, APIs, or custom tools — using a consistent interface. The response is persisted as step variables for downstream use.
 

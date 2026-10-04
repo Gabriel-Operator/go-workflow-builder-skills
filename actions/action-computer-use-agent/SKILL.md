@@ -12,6 +12,10 @@ metadata:
 
 # Computer Use Agent
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Computer control is desktop-only and requires an installed adapter plus OS permissions. Phone runtimes block it. Browser actions that touch remote pages remain connectivity-dependent even when control itself is local.
+
 ## Action type
 
 - **action_type**: `computer_use_agent`

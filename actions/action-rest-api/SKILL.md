@@ -12,6 +12,10 @@ metadata:
 
 # action-rest-api
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). REST calls are connectivity-dependent and must be reported as blockers offline. Downloaded response snapshots may be read locally through `data.read`; do not replay the REST request on reconnect or during synchronization.
+
 ## Action overview
 
 | Property | Value |

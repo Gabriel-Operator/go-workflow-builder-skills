@@ -1,0 +1,38 @@
+---
+name: action-data-feed
+description: Invoke an immutable Data Feed endpoint from an authenticated persona playbook and return validated JSON with generic acquisition types and Persona ontology contracts.
+---
+
+Use action_type `data_feed_invoke`, disableBrowser true on the initial navigate step, and `dataFeedInvocation: {feedId, revision, inputs, locale?: {countryCode, language}}`.
+
+For source discovery, registry maintenance, source selection, and the feedback loop, read [the Source registry contract](references/source-registry.md). Source Feeds use the same primitive; only their semantic output type is `Source`. A separate playbook mapping registers/evaluates Sources and instantiates approved downstream templates.
+
+For typed feed authoring, repeated acquisition, uploads/camera input, cursor and observation contracts, read [the acquisition contract](references/acquisition.md). The seven types share this runtime; providers and Persona meaning remain configuration.
+
+Select the definition from the persona Data Feed catalog. Copy its exact revision. Output variable `json` can be any JSON shape. Do not invent a resource, schema, credentials, or revision. Keep review and approval gates in this consuming playbook. There is no direct definition execution endpoint for ordinary callers.
+
+Adopting a public skeleton creates a new private revision after removing author-owned audience targeting. Use that returned revision in the runner's playbook and bind the runner's own mobile credentials.
+
+For established Lane/Nest/Lina research, an output-only feed can contain `data_source_read` with `dataFeedSource: {operation: "network-discovery" | "lead-search" | "recruiting-discovery", credentialSlot: "exa_key", inputs: "{{inputs}}"}`. Declare the persona mobile Exa API-key slot for `api.exa.ai`. This reuses the existing source-grounded normalizer through a transient authorized transport; it never falls back to an author/cloud provider key or imports provider rows. Ordinary database read/write connector configurations are not accepted by this feed interpreter.
+
+For bounded public website evidence, use `dataFeedSource: {operation: "public-document", inputs: "{{inputs}}"}` in a Read feed with a declared string `url` input and `publicUrlParameters: ["url"]`. It returns `{url, title, text, contentHash, links}` without persistence. This operation has no credential slot and sends no credentials. Typed URL inputs authorize only their exact public HTTPS hostname for this document operation; every redirect rechecks the hostname, parent execution, private-address restrictions, and forbidden internal mutation paths. Generic REST/MCP/browser operations still require static `allowedDomains`. The consuming playbook retains interpretation and mapping.
+
+A pinned guided-package operation may declare `dataFeedInvocation: {feedId: "workflow.<persona>.<source>", revision: "<exact catalog revision>"}`. Authenticated source acquisition creates a durable child playbook with that exact Read-feed pin; guided reviews, selections, consent, and explicit completion mappings remain in the original journey. Recover the same child rather than rerunning a source operation. Publish changed child packages and regenerate parent pins/fingerprints through the normal workspace publisher. Data Feed is enabled by default; `ENABLE_PERSONA_DATA_FEEDS=false` is the deployment disable switch. Default availability does not certify a release or replace live Guardian verification.
+
+Canvas invocation inputs may reference completed parent steps as `{{steps.<task-id>.json}}` or `{{steps.<task-id>.content}}`. For an approved structured document, an output-only `api_output` step can use `dataFeedOutputJson: "{{inputs.document}}"`; it decodes strict JSON and the feed validates its output schema. Prose or invalid JSON fails before any mapping. Review and correction belong in the consuming playbook.
+
+Canvas stages use `execution: {type: "data_feed", dataFeedInvocation: {...}}`; their following persistence stage uses `execution: {type: "list_mapping", listMapping: {...}}`. Both are available in the Canvas capability editor. Mock sources must declare a schema-valid connector fixture and use server-attached evaluation authority. Candidate catalogs are read at the candidate Git revision without importing them into the live catalog; internal mapping runs against the isolated List.
+
+Gateway-authored Canvas playbooks support the same typed stages through `POST /api/gateway/pages/:pageId/canvas-playbooks` with a stable `resourceKey` and `playbook`. Use `approvalPolicy: "every_stage"` and a sequential `chunks` chain. A feed chunk's `executionDefinition` contains `executionType: "data_feed"`, the exact `dataFeedInvocation`, `artifactType: "text_document"`, `requiresApproval: true`, and `autoApprove: false`. A following mapping chunk uses `executionType: "list_mapping"` and `listMapping` with `sourceStepId` pointing to the earlier feed chunk. Choose one `listId` or portable `listRef`; list access, grants and Persona ontology validation still apply at execution. Chunk `inputs.prompt` explains what the reviewer should inspect. Saving a definition performs no source call or mutation. Launch it through the existing `.../canvas-playbooks/:playbookId/run` API. A dedicated private test playbook can inspect returned JSON without any mapping. Never inject runtime identity, output, approval or credential records into the authored definition.
+
+Country/language parameters override the authenticated runner's location and profile language; the old Data Feed locale-preferences endpoint is removed. Individual/ICP selection always uses the authenticated runner's ID and stored persona profile answers, never a caller-supplied identity. Each playbook pins its resolved variant for recovery. The source supports `{{inputs.field}}` and `{{locale.language}}` variables; wire keys remain stable across translations.
+
+Credential values must come from persona mobile Guardians. Public templates use the runner's vault. Delegated feeds require a standing grant for this playbook, audience and revision. Authorization can wait while the phone is offline. Do not supply credential values in inputs or use cloud browser profiles.
+
+Browser reasoning records token counts with `payloadPolicy: "counts_only"`. Keep feed prompts and returned data out of separate model usage ledgers; validated JSON belongs to the consuming parent playbook output.
+
+To persist output, add a separate `map_json_to_list` step. Its sourceStepId is this stepId. Do not repeat a source mutation when the parent step's output was already saved. An indeterminate source mutation requires recovery review and a new authorized run.
+
+For semantic output contracts, use the `persona-ontology` skill. The parent Persona owns one `assets/ontology.json` across all regions/languages. A feed may declare `ontology: {entityType, ontologyVersion?, recordsPath, fields}` where fields maps ontology attributes to JSON pointers. Saving checks the entity/attributes and pins the parent Git revision; invocation validates the returned values without writing or rewrapping them. Feed references contain no instance IDs. Legacy feeds may omit this optional contract.
+
+For authored country, audience, and language variants, read [the variant contract](references/variants.md). Every new feed starts Global/English. Countries and authenticated ICP/individual audiences can carry independent definitions and workflows, with language variants within each scope. Persona ontology remains shared. Menu label/icon are Persona-author settings in the publishing editor, never subscriber Data Feed settings.

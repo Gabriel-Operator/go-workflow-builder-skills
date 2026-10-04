@@ -7,8 +7,9 @@
  *   npx tsx server/skills/workflow-builder/scripts/validate-workflow.ts <file.json>
  */
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { validateLocalPreviewPackage } from './validate-preview-package';
 
 const VALID_ACTION_TYPES = [
   "navigate",
@@ -42,6 +43,8 @@ const VALID_ACTION_TYPES = [
   "mcp_tool",
   "data_source_read",
   "data_source_write",
+  "data_feed_invoke",
+  "map_json_to_list",
   "api_output",
   "notification",
   "generate_media",
@@ -381,7 +384,12 @@ function validateStep(
 
   // data_source_read
   if (actionType === "data_source_read") {
-    if (!isObject(step.dataSourceReadConfig)) {
+    if (isObject(step.dataFeedSource)) {
+      const source=step.dataFeedSource as Record<string,unknown>;
+      const publicDocument=source.operation==='public-document';
+      const credentialValid=publicDocument?source.credentialSlot===undefined:typeof source.credentialSlot==='string'&&/^[a-z][a-z0-9_]{0,63}$/.test(source.credentialSlot);
+      if(!['network-discovery','lead-search','recruiting-discovery','public-document'].includes(String(source.operation))||!credentialValid||source.inputs!=='{{inputs}}'&&!isObject(source.inputs)||Object.keys(source).some(key=>!['operation','credentialSlot','inputs'].includes(key)))err(`${p}.dataFeedSource`,'needs an output-only source operation and typed inputs; research declares a persona credential slot and public document reads have none');
+    } else if (!isObject(step.dataSourceReadConfig)) {
       err(
         `${p}.dataSourceReadConfig`,
         "must be an object for data_source_read steps",
@@ -399,6 +407,20 @@ function validateStep(
     }
   }
 
+  if (actionType === "data_feed_invoke") {
+    const call = step.dataFeedInvocation as Record<string, unknown> | undefined;
+    if (!call || typeof call.feedId !== "string" || typeof call.revision !== "string" || !/^[a-f0-9]{64}$/.test(call.revision as string) || !call.inputs || typeof call.inputs !== "object" || Array.isArray(call.inputs)) {
+      err(`${p}.dataFeedInvocation`, "needs a feed identity, immutable revision and inputs object");
+    }
+  }
+  if (actionType === "map_json_to_list") {
+    const mapping = step.listMapping as Record<string, unknown> | undefined;
+    if (!mapping || (!mapping.listId && !mapping.listRef) || typeof mapping.sourceStepId !== "string" || typeof mapping.recordsPath !== "string" || !mapping.fields || typeof mapping.fields !== "object" || !["insert","upsert","update","archive","delete"].includes(String(mapping.operation))) {
+      err(`${p}.listMapping`, "needs an authorized destination, source step and JSON pointer field mapping");
+    } else if (mapping.operation === "delete" && mapping.allowPermanentDelete !== true) {
+      err(`${p}.listMapping.allowPermanentDelete`, "permanent deletion must be explicitly authorized");
+    }
+  }
   // data_source_write
   if (actionType === "data_source_write") {
     if (!isObject(step.dataSourceWriteConfig)) {
@@ -627,6 +649,14 @@ function validateWorkflow(data: unknown): void {
     // skip
   } else {
     const params = s.parameters as Record<string, unknown>;
+    if (params.dataFeed !== undefined) {
+      try {
+        if (!isObject(params.dataFeed)) throw new Error('must be an object');
+        require('../actions/action-data-feed/scripts/acquisition.cjs').validateFeedAcquisitionDefinition(params.dataFeed);
+      } catch (error) {
+        err('structure.parameters.dataFeed', error instanceof Error ? error.message : 'invalid acquisition contract');
+      }
+    }
     if (!Array.isArray(params.execute)) {
       err("structure.parameters.execute", "must be an array");
     }
@@ -727,6 +757,16 @@ function main(): void {
   }
 
   validateWorkflow(data);
+  const commandPath = resolve(dirname(absPath), 'persona-command.json');
+  if (existsSync(commandPath)) {
+    try {
+      const command = JSON.parse(readFileSync(commandPath, 'utf8'));
+      if (command.workflowSkill) {
+        const packageFingerprint = validateLocalPreviewPackage(resolve(dirname(absPath), '..'), command.workflowSkill);
+        console.log(`Workflow preview package: ${packageFingerprint}`);
+      }
+    } catch (error) { err('workflowSkill', (error as Error).message); }
+  }
 
   if (errors.length > 0) {
     console.error(`Validation failed with ${errors.length} error(s):\n`);

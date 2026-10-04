@@ -10,11 +10,15 @@ description: >
   "create an agent", or describes a multi-step task without naming the platform.
 metadata:
   author: gabriel-operator
-  version: "1.2"
+  version: "1.3"
   compatibility: Requires Node.js 18+ for script execution (npx tsx).
 ---
 
 # Workflow Builder
+
+## Offline compatibility
+
+Read [the embedded runtime contract](references/offline-runtime-v1.md). Run `scripts/analyze-offline-compatibility.mjs` on authored workflows before claiming offline support. Classify every nested action, report compatible workflow counts and blocker paths, and use only the implemented local operations in the embedded runner. Connectivity returning or **Sync now** must never execute a blocked workflow.
 
 ## Portable Git contract (schema v2)
 
@@ -331,9 +335,9 @@ For an Archer-style form playbook, author exactly three contiguous
    `playbookEntrypointId: "execute"`.
 
 For a `channels_only` questionnaire, submitting the trusted response form (or
-confirming its exact preview in voice) is the task's explicit human approval.
-Keep `requiresApproval: true`: after the Collect transition commits, Canvas
-records the matching run-and-answer approval and proceeds directly to
+confirming its exact preview in Talk or Chat) is the task's explicit human
+approval. Keep `requiresApproval: true`: after the Collect transition commits,
+Canvas records the matching run-and-answer approval and proceeds directly to
 Fill/submit. Do not author a second Looks good/Improve approval step for the
 same answers. If the approval record cannot be written, runtime falls back to
 the normal explicit Canvas review and fails closed.
@@ -343,17 +347,33 @@ playbook JSON as artifacts. All pipeline task transitions are `manual`, have
 `autoFireOnEntry: false`, and map one Canvas task to one transition. The execute
 entrypoint belongs only on the final task and may not permit a form URL override.
 
+**`autoFireOnEntry: false` is not optional and this file cannot set it.** Every
+transition a `personaCapabilityConfig`/`canvasTask` here points at
+(`execution.pipelineRef` + `transitionId`) must carry
+`"automation": { "autoFireOnEntry": false }` on the **pipeline** side
+(`assets/pipeline.json`, authored with `pipeline-builder`) — a workflow that
+references a transition missing this field authors cleanly and still fails at
+execution with `Canvas-driven transitions must explicitly set autoFireOnEntry
+to false.` (`CANVAS_TRANSITION_AUTO_FIRES`) the first time chat runs it.
+Before wiring a new Canvas task to a `transitionId`, confirm that transition
+already has this field set in the pipeline repo, not just that the id exists.
+
 For model-driven prior-case detection, set one `existingCasePolicyId` on the
 shared Canvas definition (and therefore the terminal aggregate Canvas). Do not
-add a separate "check previous submission" Canvas task or place prior answers in
-workflow JSON. The standard slash-command launcher asks Reuse / Start fresh
-before execution exists; dismissing the prompt is the non-mutating cancel path.
+add a separate "check previous submission" Canvas task, a prefill tool, or prior
+answers in workflow JSON. The standard slash-command launcher asks Reuse / Start
+fresh before execution exists; dismissing the prompt is the non-mutating cancel
+path. Choosing **Reuse** with a complete compatible bag commits through
+`reused_answers` and proceeds to the Collect approval gate (Looks good /
+Improve / Abort). Improve is the explicit path back into the editable
+questionnaire. Incomplete reuse, and any lookup that did not go through that
+launcher confirmation, only prefills drafts.
+
 The Analyze task then reconciles referenced answers against the newly acquired
-trusted schema and continues to the normal review gate. Reconciled values are
-prefill only: even when every prior answer remains compatible, Canvas must show
-the current full Q&A and obtain a new explicit confirmation before executing the
-Collect transition. Never turn a fully reusable answer bag into a synthetic
-completed response.
+trusted schema and continues to the normal review gate. Automatic Collect-time
+prefill (list row, signed-in profile, conversational memory) is also draft-only:
+Canvas always shows the current full Q&A so the user can keep, edit, or start
+from scratch before Collect runs. Never auto-submit those drafts.
 
 The referenced policy is authored under **Pipeline → Manage → Config →
 Existing-case detection**. Workflow owns only the stable policy ID. Never copy
@@ -376,13 +396,35 @@ Canvas task and its matching `taskTypes[]` entry:
 }
 ```
 
-`channels_only` deliberately removes the inline/chat answer form. Linked Persona
-Chat apps such as Slack, Discord, Telegram, and WhatsApp receive a single-use
-questionnaire for this Canvas task; they do not start or reuse general Persona
-chat. A submitted questionnaire is an explicit confirmation of the displayed
-values; voice must preview the exact normalized values and obtain an affirmative
-confirmation before its answer tool may submit them. Do not create a team-agent `suspend_resume` workflow merely to collect
-these answers. Canvas owns the durable response session, and the pipeline's
+Canvas always presents three in-app answering surfaces for `channels_only`:
+
+| Surface | Channel | When it appears | Behavior |
+|---|---|---|---|
+| **Answer here** | inline form | always | The trusted Q&A card. Prefills drafts; the user must confirm. |
+| **Talk** | `in_app_voice` | when `in_app_voice` is in `allowedChannels` (default if `allowedChannels` is omitted) | Voice must preview the exact normalized values and obtain an affirmative confirmation before its answer tool may submit them. |
+| **Chat** | `in_app_chat` | always | A new questionnaire-only assistant session titled **Questionnaire**. It is not general Persona chat: no persona tools, only the trusted questions. Canvas closes while Chat runs and reopens on the preview for Confirm and continue. |
+
+Do **not** put `in_app_chat` or generic `chat` in `allowedChannels`. Chat is a
+first-class Canvas UI option, not a runner channel. `allowedChannels` only
+gates Talk (`in_app_voice`) and runner channels: phone, email, and linked
+Persona Chat apps (`persona_channels`). Slack, Discord, Telegram, and WhatsApp
+receive a single-use questionnaire URL for this Canvas task; they do not start
+or reuse general Persona chat.
+
+Before the questionnaire is shown, runtime prefills draft answers in this
+order of confidence: (1) a prior List row for this form when the Pipeline has
+`existingCasePolicies`, including a silent lookup when the launcher did not
+pass `_existingCase`; (2) the signed-in user's profile (name, email, phone, and
+matching identity fields); (3) Honcho/Mem0 conversational memory when the
+Persona's `publishedConfig.memoryConfig.provider` is not `none`. Conflicting
+values keep the higher-confidence source. Low-confidence memory matches stay as
+Talk/Chat suggestions and are never written into the form. Prefill is always-on
+runtime behavior — do not add a toggle to `chat-config.json`, the slash-command
+details UI, or workflow JSON.
+
+A submitted questionnaire is an explicit confirmation of the displayed values.
+Do not create a team-agent `suspend_resume` workflow merely to collect these
+answers. Canvas owns the durable response session, and the pipeline's
 workflowless transition validates and commits the returned data. The normal
 Filer path must not run a live `schema_form_dry_run` here: doing so opens the
 external browser once during Collect and again during Fill/submit. Fill/submit
@@ -647,6 +689,8 @@ Load the relevant child skill for each step type you need:
 | `mcp_tool` | `action-mcp-tool` | Model Context Protocol tool call |
 | `data_source_read` | `action-data-source-read` | Read from DB/datasource |
 | `data_source_write` | `action-data-source-write` | Write to DB/datasource |
+| `data_feed_invoke` | `action-data-feed` | Invoke a pinned persona feed from a playbook; returns JSON |
+| `map_json_to_list` | `action-list-mapping` | Persist preceding JSON to a separately selected authorized list |
 | `api_output` | `action-api-output` | Define structured output schema |
 | `notification` | `action-notification` | Send notification (email/Slack/webhook/etc.) |
 | `wait` | `action-wait` | Delay/pause step |
@@ -917,6 +961,13 @@ Bad examples (too technical):
 - `"string value"` — no useful context
 
 ## Available scripts
+
+For Git-authored anonymous journeys, read
+[references/CAPABILITY-PREVIEW-V2.md](references/CAPABILITY-PREVIEW-V2.md).
+Version 2 is additive to existing workflow-owned version 1 packages. Use the
+canonical preview validator; never add persona-specific TypeScript dispatch or
+executable repository code to author a supported journey. Keep bindings inactive
+until the target backend and that domain's acceptance checks support them.
 
 - **`scripts/validate-workflow.ts`** — Validates a workflow JSON file against the full schema
 - **`scripts/generate-example.ts`** — Generates an example workflow JSON for a given scenario
