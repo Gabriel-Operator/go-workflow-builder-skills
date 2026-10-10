@@ -14,9 +14,13 @@ export const CAPABILITY_HANDLERS = {
   'grocery-normalization': { asynchronous: false, approvals: [] },
   'grocery-calculation': { asynchronous: false, approvals: [] },
   'form-normalization': { asynchronous: false, approvals: [] },
+  'scrap-market-discovery': { asynchronous: true, approvals: [] },
+  'scrap-valuation': { asynchronous: false, approvals: [] },
+  'scrap-buyer-projection': { asynchronous: false, approvals: [] },
   'lead-search': { asynchronous: true, approvals: [] },
   'network-discovery': { asynchronous: true, approvals: [] },
   'recruiting-discovery': { asynchronous: true, approvals: [] },
+  'private-list-records': { asynchronous: true, approvals: [] },
 } as const;
 export type CapabilityHandler = keyof typeof CAPABILITY_HANDLERS;
 export type ApprovalKind = 'source_permission' | 'generation_confirmation' | 'content_approval' | 'input_confirmation';
@@ -85,12 +89,22 @@ export type CapabilityOperation = {
   handler: CapabilityHandler;
   inputSchema: string;
   outputSchema: string;
+  /** Optional authenticated source migration. Execution always creates a consuming playbook. */
+  dataFeedInvocation?: {feedId:string;revision:string};
+  /** A bounded projection of the signed-in runner's rows. Scope is never an input. */
+  privateListSource?: {
+    listRef: { kind: 'list'; resourceKey: string };
+    fields: Record<string, string>;
+    limit: number;
+  };
   template?: string;
   variables?: string[];
+  /** Model results may reference only records in this approved input array. */
+  recordReferences?: { sourceField: string; outputField: string; referenceField: string; sourceKey?: string };
   /** Installed instruction consumer. Uses the embedded immutable Phase 1 contract. */
   instructionOperation?: 'analyze-instagram-brand' | 'prepare-event-brief' | 'build-campaign-image-prompts' | 'analyze-capture' | 'revise-inventory' | 'build-dietary-plan';
 };
-export const CAPABILITY_BLOCKS = ['message', 'notice', 'progress', 'input', 'questionnaire', 'upload', 'document-upload', 'media-selection', 'reference-selection', 'record', 'table', 'evidence', 'permission', 'images', 'draft', 'metrics', 'downloads', 'login'] as const;
+export const CAPABILITY_BLOCKS = ['message', 'notice', 'progress', 'input', 'questionnaire', 'upload', 'document-upload', 'media-selection', 'reference-selection', 'record', 'table', 'evidence', 'permission', 'images', 'draft', 'metrics', 'scrap-quote', 'scrap-buyers', 'downloads', 'login'] as const;
 export type CapabilityBlock = {
   id: string;
   kind: typeof CAPABILITY_BLOCKS[number];
@@ -128,7 +142,7 @@ export type CapabilityNode = {
   maxVisits?: number;
 };
 export type CapabilityContinuation = {
-  adapter: 'archer-images' | 'form-answers' | 'grocery-inventory' | 'lead-launch' | 'command-launch' | 'lead-search' | 'connection-research' | 'command-inputs' | 'private-chat';
+  adapter: 'archer-images' | 'form-answers' | 'grocery-inventory' | 'reviewed-items' | 'lead-launch' | 'command-launch' | 'lead-search' | 'connection-research' | 'command-inputs' | 'private-chat' | 'workspace-record';
   bindings: Record<string, CapabilityBinding>;
   approvalFields: string[];
   /**
@@ -169,6 +183,7 @@ export const CAPABILITY_CONTINUATION_INPUTS = {
   'archer-images': { instagram_url: 'string', approved_brand_identity: 'object', event_brief: 'object', competitor_scope: 'object', creative_direction: 'object', reference_brief: 'object', selected_image_ids: 'array' },
   'form-answers': { form_fields: 'array', form_answers: 'object', media_ids: 'array' },
   'grocery-inventory': { confirmed_items: 'array', household: 'object', weekly_plan: 'object', media_ids: 'array' },
+  'reviewed-items': { confirmed_items: 'array', media_ids: 'array' },
   'lead-launch': { source_url: 'string', signal: 'object', selected_role: 'object', draft: 'object' },
   'lead-search': { profile_mode_id: 'string', selected_leads: 'array', lead_results: 'object' },
   'connection-research': { profile_mode_id: 'string', selected_connections: 'array', connection_results: 'object' },
@@ -198,7 +213,9 @@ export type CapabilityManifest = {
   publicFields: string[];
   /** Public state fields seeded by a trusted host context before the first node. */
   contextFields?: string[];
+  /** Selects a package-authored entry node from one trusted context value. */
   entrypoint?: CapabilityEntrypoint;
+  /** A terminal sign-in gate that resumes this exact pinned package after login. */
   authenticationCheckpoint?: CapabilityAuthenticationCheckpoint;
   continuation?: CapabilityContinuation;
   /** Phase 1 instructions reused by authenticated services at this exact pin. */

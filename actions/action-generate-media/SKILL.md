@@ -133,3 +133,7 @@ The generate media step creates images, video, or audio content using AI generat
 - Not all `mediaOptions` apply to all media types. For example, `voiceId` is only relevant for audio, and `fps` is only relevant for video. Irrelevant fields are silently ignored.
 - The `multimodalProvider` determines which options are actually supported. Providers have different capabilities — check provider documentation for supported aspect ratios, resolutions, and features.
 - Template variables in `userPrompt` are resolved at runtime. If the referenced step output is very long, it may exceed the provider's prompt length limit.
+
+## Persona integration support
+
+Input vision and media generation are independent. Mastra voice tools retain the existing confirmation behavior for generation. Use current live/browser/desktop visual context only while available; an expired or cleared frame is not a reference image.

@@ -16,3 +16,7 @@ Runtime list IDs and destination grants do not belong in portable feed templates
 A persona may declare standalone List models in `assets/data-feeds/catalog.json` under `lists: [{resourceKey, assetPath}]`. Each referenced schema-v2 `definitions_only` asset holds a name and typed columns, with no rows or Pipeline bindings. A mapping with `listRef` allocates a runner-private copy on first use; reading a feed/model never creates records. Existing imported Pipeline Lists continue using their authorized bindings and mutation architecture. Mock evaluations resolve their own isolated List copies and never write the live Lists.
 
 An optional `ontology: {entityType, ontologyVersion?, recordsPath, fields}` validates source JSON against the Persona's `assets/ontology.json` before mutation. The ontology fields are attribute identifiers; the separate mapping fields remain List column keys. Use the `persona-ontology` skill to edit the parent definition. This adds no storage, migrations, relationship traversal, or bypass of state-machine rules.
+
+## Context-aware ontology
+
+Validate semantic projections against the parent’s context-selected ontology. Global, country, audience and language feed variants may reference different selected models; never translate machine keys. Runtime captures ontology selection before acquisition, and downstream mappings reuse the source step’s pin rather than loading today’s default. See the gateway `persona-ontology` skill topic for validated candidate authoring and preview.

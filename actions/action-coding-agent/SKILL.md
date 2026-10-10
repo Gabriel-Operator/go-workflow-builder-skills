@@ -122,3 +122,7 @@ The coding agent step runs a coding AI agent in a sandboxed environment. The age
 - Git credentials for private repositories must be configured at the platform level. The `gitRepoUrl` alone is not sufficient for private repos.
 - The coding agent may run for several minutes depending on task complexity. Ensure workflow timeouts accommodate this.
 - `agentType` must be `"coding"` — using `"computer_use"` here will not work. Use the `computer_use_agent` action type for desktop-level computer use.
+
+## Persona integration support
+
+Persona integration bindings can expose additional SDK sandbox tools without changing this workflow action. Runtime credentials remain user-bound. Consult `persona-integrations` for the selected provider capability and required host; do not infer desktop control from code execution support.

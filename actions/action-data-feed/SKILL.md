@@ -36,3 +36,7 @@ To persist output, add a separate `map_json_to_list` step. Its sourceStepId is t
 For semantic output contracts, use the `persona-ontology` skill. The parent Persona owns one `assets/ontology.json` across all regions/languages. A feed may declare `ontology: {entityType, ontologyVersion?, recordsPath, fields}` where fields maps ontology attributes to JSON pointers. Saving checks the entity/attributes and pins the parent Git revision; invocation validates the returned values without writing or rewrapping them. Feed references contain no instance IDs. Legacy feeds may omit this optional contract.
 
 For authored country, audience, and language variants, read [the variant contract](references/variants.md). Every new feed starts Global/English. Countries and authenticated ICP/individual audiences can carry independent definitions and workflows, with language variants within each scope. Persona ontology remains shared. Menu label/icon are Persona-author settings in the publishing editor, never subscriber Data Feed settings.
+
+## Context-aware ontology
+
+Validate semantic projections against the parent’s context-selected ontology. Global, country, audience and language feed variants may reference different selected models; never translate machine keys. Runtime captures ontology selection before acquisition, and downstream mappings reuse the source step’s pin rather than loading today’s default. See the gateway `persona-ontology` skill topic for validated candidate authoring and preview.

@@ -12,6 +12,7 @@ import { dirname, resolve } from "node:path";
 import { validateLocalPreviewPackage } from './validate-preview-package';
 
 const VALID_ACTION_TYPES = [
+  "agent_card",
   "navigate",
   "click",
   "fill",

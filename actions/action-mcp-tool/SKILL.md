@@ -93,3 +93,7 @@ The MCP tool step calls an external Model Context Protocol (MCP) server to invok
 - The `userPrompt` is interpreted by an LLM to decide which MCP tool to invoke and what arguments to pass. Vague prompts may lead to incorrect tool selection. Be specific about the tool name and parameters when possible.
 - MCP servers must be reachable from the platform's execution environment. Private or localhost MCP servers will not work unless properly tunneled or exposed.
 - If both `mcpServerId` and `mcpServerUrl` are provided, behavior may be unpredictable. Use one or the other.
+
+## Persona integration support
+
+A persona can also expose direct SDK integrations through `integrationBindings`. Prefer the persona’s configured integration and its tool permissions rather than registering a duplicate broker tool for the same operation. Use registry discovery and actor-owned connection tests.
