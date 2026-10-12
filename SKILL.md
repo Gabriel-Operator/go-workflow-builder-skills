@@ -15,6 +15,18 @@ metadata:
 ---
 
 # Workflow Builder
+## Persona operating framework
+
+Read [the source-to-outcome contract](references/persona-framework.md) when
+connecting domain evidence and actions. Ontology supplies stable semantics;
+Persona Data Feeds acquire validated JSON; Signals explain a change and prepare
+declared playbooks; human approvals control effects; accepted outcomes and
+attributed cost drive ROI. Keep definitions in model repositories and private
+runtime state outside portable Git. Discover `persona-framework`,
+`persona-data-feeds`, `persona-signals`, `persona-playbooks`, `persona-ontology`
+and `persona-roi` through `gabriel_get_skill_instructions`; load the topics
+relevant to the requested work.
+
 
 ## AgentCard payments
 
