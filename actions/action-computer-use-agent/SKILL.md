@@ -12,6 +12,10 @@ metadata:
 
 # Computer Use Agent
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Computer control is desktop-only and requires an installed adapter plus OS permissions. Phone runtimes block it. Browser actions that touch remote pages remain connectivity-dependent even when control itself is local.
+
 ## Action type
 
 - **action_type**: `computer_use_agent`
@@ -105,3 +109,7 @@ The computer use agent step runs an AI agent in a sandboxed desktop environment.
 - The sandbox is ephemeral — all files and state are destroyed when the step completes or the timeout is reached. Ensure any output is captured before the sandbox terminates.
 - `sandboxTimeout` is a hard limit. If the agent is mid-task when the timeout hits, the sandbox is terminated immediately with no cleanup. Set generous timeouts for complex tasks.
 - Vision model quality directly impacts reliability. Weaker vision models may misidentify UI elements, click wrong buttons, or get stuck in loops.
+
+## Persona integration support
+
+The executor now runs a Mastra vision observation/action loop with `@e2b/desktop`, rather than an initialization command. Select a saved vision model or a user default. It stops on completion, timeout, or its action limit, retains reported output files under `/home/user` in the run artifact directory, and always terminates the desktop sandbox.

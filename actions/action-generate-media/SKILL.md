@@ -12,6 +12,10 @@ metadata:
 
 # Generate Media
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Local media generation is available only when the runtime reports the required installed model and hardware capability. Hosted image, video, audio, and avatar providers require connectivity. Store local outputs as artifact records and do not upload them automatically.
+
 ## Action type
 
 - **action_type**: `generate_media`
@@ -34,7 +38,7 @@ The generate media step creates images, video, or audio content using AI generat
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `mediaType` | string | — | Type of media to generate: `"image"`, `"video"`, `"audio"` |
+| `mediaType` | string | — | Type of media to generate: `"image"`, `"video"`, `"audio"` (text-to-speech), or `"music"` (text-to-music: Lyria, Suno, ElevenLabs Music, Beatoven, Apiframe Music). `"music"` runs through the audio generation service with the music provider. |
 | `userPrompt` | string | — | Text prompt describing the desired media |
 | `multimodalProvider` | string | — | AI provider to use for generation |
 | `imageUrl` | string | — | Input image URL for image-to-video or style reference |
@@ -129,3 +133,7 @@ The generate media step creates images, video, or audio content using AI generat
 - Not all `mediaOptions` apply to all media types. For example, `voiceId` is only relevant for audio, and `fps` is only relevant for video. Irrelevant fields are silently ignored.
 - The `multimodalProvider` determines which options are actually supported. Providers have different capabilities — check provider documentation for supported aspect ratios, resolutions, and features.
 - Template variables in `userPrompt` are resolved at runtime. If the referenced step output is very long, it may exceed the provider's prompt length limit.
+
+## Persona integration support
+
+Input vision and media generation are independent. Mastra voice tools retain the existing confirmation behavior for generation. Use current live/browser/desktop visual context only while available; an expired or cleared frame is not a reference image.

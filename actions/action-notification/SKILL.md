@@ -12,6 +12,10 @@ metadata:
 
 # Notification
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). External email, Slack, push, SMS, and webhook delivery require connectivity and are blocked offline. Synchronization never sends them. If retry safety is uncertain, require review before a later online execution.
+
 ## Action type
 
 - **action_type**: `notification`

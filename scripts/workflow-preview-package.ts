@@ -53,7 +53,7 @@ export function validatePreviewPackage(files: Record<string, string>): PreviewPa
   for (const operation of capability.operations as Operation[]) {
     if (!expectedOperations.includes(operation.id) || operations[operation.id] || Object.keys(operation).some(key => !['id', 'inputSchema', 'outputSchema', 'template', 'variables', ...(capability.domain ? ['access'] : [])].includes(key))) throw new Error('Undeclared or duplicate operation');
     if (capability.domain && operation.access !== (operation.id === 'render-filled-form' ? 'authenticated' : 'public')) throw new Error('Invalid preview operation access');
-    if (!Array.isArray(operation.variables) || operation.variables.length > 12 || operation.variables.some(v => !/^[a-z][a-z_]{0,40}$/.test(v) || forbidden.test(v))) throw new Error('Invalid template variables');
+    if (!Array.isArray(operation.variables) || operation.variables.length > 12 || operation.variables.some(v => !/^[a-z][a-zA-Z0-9_]{0,40}$/.test(v) || forbidden.test(v))) throw new Error('Invalid template variables');
     for (const name of [operation.inputSchema, operation.outputSchema, operation.template]) {
       if (!Object.prototype.hasOwnProperty.call(files, name)) throw new Error('Missing package dependency');
       referenced.add(name);
@@ -75,12 +75,12 @@ export function validatePreviewPackage(files: Record<string, string>): PreviewPa
 /** Literal single-pass substitution only; inserted user text is never interpreted. */
 export function renderPreviewTemplate(template: string, values: Record<string, string>, allowed: string[]): string {
   if (template.length > 16000) throw new Error('Template size limit exceeded');
-  const remaining = template.replace(/\{\{([a-z][a-z_]{0,40})\}\}/g, (_match, key: string) => {
+  const remaining = template.replace(/\{\{([a-z][a-zA-Z0-9_]{0,40})\}\}/g, (_match, key: string) => {
     if (!allowed.includes(key) || !Object.prototype.hasOwnProperty.call(values, key)) throw new Error('Undeclared template variable');
     return '';
   });
   if (/[{}]/.test(remaining)) throw new Error('Template expressions are forbidden');
-  return template.replace(/\{\{([a-z][a-z_]{0,40})\}\}/g, (_match, key: string) => {
+  return template.replace(/\{\{([a-z][a-zA-Z0-9_]{0,40})\}\}/g, (_match, key: string) => {
     const value = values[key];
     if (typeof value !== 'string' || value.length > 32000) throw new Error('Template input limit exceeded');
     return value;

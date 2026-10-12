@@ -12,6 +12,10 @@ metadata:
 
 # API Call
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). API calls require connectivity and are blocked before local execution. A local device-repository operation must use the explicit local data contract instead. Reconnect and **Sync now** do not execute this step.
+
 ## Action type
 
 - **action_type**: `api_call`

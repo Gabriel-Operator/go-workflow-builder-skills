@@ -13,6 +13,10 @@ metadata:
 
 # action-data-source-read
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Use `data.read` or `list.read` with a prepared device repository for offline execution. Remote databases, search indexes, and HTTP sources stay blocked. Declare the adapter and stable local resource key so compatibility analysis can distinguish them.
+
 ## Action overview
 
 | Property | Value |

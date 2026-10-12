@@ -12,6 +12,10 @@ metadata:
 
 # Data Source Write
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Use `data.write` or `list.write` against the device repository with a stable entity ID and operation ID. The record and outbox mutation commit together. Remote targets require connectivity; synchronization never re-executes the workflow step.
+
 ## Action type
 
 - **action_type**: `data_source_write`

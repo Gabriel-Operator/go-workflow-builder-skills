@@ -12,6 +12,10 @@ metadata:
 
 # LLM REST API
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Provider REST calls require connectivity. Use `prompt.local` only when the requested model is installed on the device; keep provider credentials out of definitions and never silently change providers.
+
 ## Action type
 
 - **action_type**: `llm_rest_api`

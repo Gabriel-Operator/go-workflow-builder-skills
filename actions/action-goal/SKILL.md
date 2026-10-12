@@ -13,6 +13,10 @@ metadata:
 
 # action-goal
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Analyze every planned and nested action before starting an autonomous goal. Contract-v1 local operations may run; browser/network/external effects remain blocked according to their capabilities. Do not let replanning silently replace a blocked step with a hosted call.
+
 ## Action overview
 
 | Property | Value |

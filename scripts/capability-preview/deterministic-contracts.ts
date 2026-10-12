@@ -1,4 +1,5 @@
 import type { CapabilityHandler, JsonSchema } from './contract';
+import { SCRAP_FIXED_CONTRACTS } from './scrap-contracts';
 
 const string = (maxLength: number): JsonSchema => ({ type: 'string', maxLength });
 const integer = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
@@ -46,6 +47,46 @@ export const DETERMINISTIC_CONTRACTS: Partial<Record<CapabilityHandler, { input:
 
 /** Fixed transport result; package authors cannot reinterpret an HTML response as arbitrary data. */
 export const IMAGE_EVIDENCE_INPUT = object({ mediaIds: { ...array(string(160), 6), minItems: 1 } });
+export const DOCUMENT_UPLOAD_INPUT = object({ documentIds: { ...array(string(160), 1), minItems: 1 } });
+export const DOCUMENT_TEXT_OUTPUT = object({
+  documentId: string(160), fileName: string(255),
+  mimeType: { ...string(100), enum: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'] },
+  text: string(16000), contentHash: string(64), truncated: { type: 'boolean' },
+});
+export const RECRUITING_DISCOVERY_INPUT: JsonSchema = {
+  type: 'object',
+  properties: {
+    profileModeId: { ...string(40), enum: ['job-seeker', 'employer'] },
+    agencyIntent: { ...string(40), enum: ['win_client', 'place_candidate', 'source_candidates', 'not_applicable'] },
+    representationContext: { ...string(40), enum: ['self', 'agency_candidates', 'own_company', 'agency_client'] },
+    phase: { ...string(40), enum: ['opportunities', 'candidates', 'comparables', 'competitor_hires', 'open_to_work'] },
+    accessLevel: { ...string(20), enum: ['anonymous', 'authenticated'] },
+    sourceUrl: string(2000),
+    query: string(4000),
+    roleTitle: string(300),
+    roleRequirements: string(16000),
+    candidateSummary: string(16000),
+  },
+  required: ['profileModeId', 'phase', 'accessLevel'],
+  additionalProperties: false,
+};
+const RECRUITING_EVIDENCE = object({
+  criterion: string(300), status: { ...string(20), enum: ['verified', 'unknown'] },
+  reasoning: string(2000), references: array(string(2000), 8),
+});
+export const RECRUITING_DISCOVERY_OUTPUT = object({
+  provider: { ...string(40), enum: ['exa'] },
+  phase: { ...string(40), enum: ['opportunities', 'candidates', 'comparables', 'competitor_hires', 'open_to_work'] },
+  searchIds: array(string(200), 4),
+  items: array(object({
+    id: string(200), type: string(60), title: string(300), description: string(16000),
+    sourceUrl: string(2000), sourceName: string(300), companyName: string(300),
+    publicRole: string(300), identity: string(500), evidence: array(RECRUITING_EVIDENCE, 12),
+  }), 50),
+  summary: string(12000),
+  resultCount: integer(0, 50), resultLimit: integer(1, 50), partial: { type: 'boolean' },
+  warnings: array(string(500), 10),
+});
 export const CAMPAIGN_IMAGE_OUTPUT = object({ images: { ...array(object({ id: string(160), format: { ...string(20), enum: ['feed-cover', 'carousel-support', 'story'] }, width: { ...integer(1080, 1080), const: 1080 }, height: { ...integer(1350, 1920), enum: [1350, 1920] }, contentHash: string(64) }), 3), minItems: 3 } });
 export const IMAGE_EVIDENCE_OUTPUT = object({ images: { ...array(object({ id: string(160), mimeType: string(30), width: integer(1, 4096), height: integer(1, 4096), contentHash: string(64) }), 6), minItems: 1 } });
 export const INSTAGRAM_EVIDENCE_OUTPUT = object({
@@ -56,10 +97,13 @@ export const INSTAGRAM_EVIDENCE_OUTPUT = object({
 });
 export const FIXED_CAPABILITY_CONTRACTS = {
   ...DETERMINISTIC_CONTRACTS,
+  ...SCRAP_FIXED_CONTRACTS,
   'image-evidence': { input: IMAGE_EVIDENCE_INPUT, output: IMAGE_EVIDENCE_OUTPUT },
   'instagram-evidence': { input: object({ url: string(2000) }), output: INSTAGRAM_EVIDENCE_OUTPUT },
   'public-document': {
     input: object({ url: string(2000) }),
     output: object({ url: string(2000), title: string(300), text: string(16000), contentHash: string(64), links: array(string(2000), 20) }),
   },
+  'document-text': { input: DOCUMENT_UPLOAD_INPUT, output: DOCUMENT_TEXT_OUTPUT },
+  'recruiting-discovery': { input: RECRUITING_DISCOVERY_INPUT, output: RECRUITING_DISCOVERY_OUTPUT },
 };

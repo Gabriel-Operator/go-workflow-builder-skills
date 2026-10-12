@@ -16,6 +16,14 @@ metadata:
 
 # Workflow Builder
 
+## AgentCard payments
+
+For approved purchases, read [action-agent-card](actions/action-agent-card/SKILL.md). The `agent_card` browser node resolves the current runner or persona owner’s Vault attachment, intersects Identity, slash-command and runner guardrails, waits for the card holder’s exact-plan approval, and forces a separate Vault passkey approval before payment. Use attach before checkout and reconcile afterwards. Never put card credentials in Git or bypass approval with a generic REST/goal step. Unknown outcomes must be reconciled before another payment.
+
+## Offline compatibility
+
+Read [the embedded runtime contract](references/offline-runtime-v1.md). Run `scripts/analyze-offline-compatibility.mjs` on authored workflows before claiming offline support. Classify every nested action, report compatible workflow counts and blocker paths, and use only the implemented local operations in the embedded runner. Connectivity returning or **Sync now** must never execute a blocked workflow.
+
 ## Portable Git contract (schema v2)
 
 New workflow repositories must use a stable resource key and portable dependency refs:
@@ -685,6 +693,8 @@ Load the relevant child skill for each step type you need:
 | `mcp_tool` | `action-mcp-tool` | Model Context Protocol tool call |
 | `data_source_read` | `action-data-source-read` | Read from DB/datasource |
 | `data_source_write` | `action-data-source-write` | Write to DB/datasource |
+| `data_feed_invoke` | `action-data-feed` | Invoke a pinned persona feed from a playbook; returns JSON |
+| `map_json_to_list` | `action-list-mapping` | Persist preceding JSON to a separately selected authorized list |
 | `api_output` | `action-api-output` | Define structured output schema |
 | `notification` | `action-notification` | Send notification (email/Slack/webhook/etc.) |
 | `wait` | `action-wait` | Delay/pause step |
@@ -692,7 +702,7 @@ Load the relevant child skill for each step type you need:
 ### Media & Sandbox Actions (no browser)
 | action_type | Child Skill | Description |
 |-------------|-------------|-------------|
-| `generate_media` | `action-generate-media` | AI image/video/audio generation |
+| `generate_media` | `action-generate-media` | AI image, video, speech, or music generation |
 | `stitch_videos` | `action-stitch-videos` | Combine video clips |
 | `coding_agent` | `action-coding-agent` | Sandbox code execution |
 | `computer_use_agent` | `action-computer-use-agent` | Computer use in sandbox |
@@ -973,3 +983,12 @@ See [references/SCHEMA.md](references/SCHEMA.md) for the complete field-by-field
 See [references/CROSS-CUTTING.md](references/CROSS-CUTTING.md) for guards, hooks, evals, groups, and parameters.
 
 See [references/TEMPLATE.md](references/TEMPLATE.md) for a copy-paste blank template.
+
+## Persona integration support
+
+Persona-backed agent execution can use the same published integration bindings as chat and voice. Load the `persona-integrations` topic. For standalone LLM nodes, use `personaPageId` and `integrationRefs`; references must already be enabled by the persona. Native workflow actions and their authorization remain unchanged.
+
+
+## Command governance and cost handoff
+
+For slash-command authoring, read [command governance and estimated cost](references/command-governance.md). Report warnings and the selected review profile with cost comparisons before handing off the command.

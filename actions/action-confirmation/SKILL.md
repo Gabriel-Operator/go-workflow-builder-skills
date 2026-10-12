@@ -12,6 +12,10 @@ metadata:
 
 # action-confirmation
 
+## Offline behavior
+
+Read [contract v1](references/offline-runtime-v1.md). Author embedded approvals as `approval.request`. The runner persists the pending schema and checkpoint locally and resumes only after explicit input; synchronization does not approve or resume it.
+
 ## Action overview
 
 | Property | Value |
@@ -100,3 +104,6 @@ A short label displayed as the step name in the workflow UI. If omitted, the ste
 - **Browser stays open** — the page is visible and interactive in the live view, but the automation does not touch it. The user can manually inspect the page during the pause.
 - **WebSocket required** — confirmation relies on an active WebSocket connection. If the client disconnects, the workflow remains paused and resumes when the client reconnects and confirms.
 - **No data capture** — this step does not capture or return any data. It is purely a flow-control checkpoint. Use `action-manual-extract` or `action-llm` if you need to capture information during a pause.
+
+
+An authored confirmation should preview the exact irreversible effect. The runtime action gate still verifies actor, arguments, target, workflow and policy; a generic plan approval does not authorize different downstream effects. Approval persistence failure must hold the effect.

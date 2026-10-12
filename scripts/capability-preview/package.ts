@@ -1,7 +1,8 @@
 import { createHash } from 'crypto';
 import Ajv, { type ValidateFunction } from 'ajv';
 import { validatePreviewPackage, type PreviewPackage } from '../workflow-git/workflow-preview-package';
-import { FIXED_CAPABILITY_CONTRACTS, IMAGE_EVIDENCE_INPUT, CAMPAIGN_IMAGE_OUTPUT, NORMALIZED_FORM, FORM_ANSWERS } from './deterministic-contracts';
+import { FIXED_CAPABILITY_CONTRACTS, IMAGE_EVIDENCE_INPUT, DOCUMENT_UPLOAD_INPUT, CAMPAIGN_IMAGE_OUTPUT, NORMALIZED_FORM, FORM_ANSWERS } from './deterministic-contracts';
+import { SCRAP_QUOTE, SCRAP_BUYERS_PUBLIC, SCRAP_BUYER_PUBLIC } from './scrap-contracts';
 import { CAPABILITY_BLOCKS, CAPABILITY_HANDLERS, CAPABILITY_CONTINUATION_INPUTS, type ApprovalKind, type CapabilityBinding, type CapabilityJourney, type CapabilityManifest, type CapabilityNode, type CapabilityOperation, type JsonSchema } from './contract';
 
 export const CAPABILITY_PACKAGE_LIMITS = { files: 96, fileBytes: 65536, totalBytes: 3145728, nodes: 40, operations: 20 } as const;
@@ -61,7 +62,7 @@ export function validateCapabilitySchema(value: unknown, depth = 0): asserts val
     }
   }
   if (value.type === 'array') {
-    if (!Number.isInteger(value.maxItems) || value.maxItems < 0 || value.maxItems > 50) fail('bounded array required');
+    if (!Number.isInteger(value.maxItems) || value.maxItems < 0 || value.maxItems > 100) fail('bounded array required');
     validateCapabilitySchema(value.items, depth + 1);
   }
   if (value.type === 'string' && (!Number.isInteger(value.maxLength) || value.maxLength < 0 || value.maxLength > 16000)) fail('bounded string required');
@@ -93,7 +94,13 @@ export function stripCapabilitySchemaAnnotations(schema: JsonSchema): JsonSchema
   }));
 }
 function sameSchema(a: JsonSchema, b: JsonSchema): boolean { return JSON.stringify(stripCapabilitySchemaAnnotations(a)) === JSON.stringify(stripCapabilitySchemaAnnotations(b)); }
-function checkBindings(bindings: Record<string, CapabilityBinding>, state: JsonSchema, expected?: JsonSchema): void {
+function draftSchemaShape(schema: JsonSchema): JsonSchema {
+  return Object.fromEntries(Object.entries(schema).filter(([key]) => !['minimum', 'minItems', 'minLength'].includes(key)).map(([key, value]) => [key,
+    key === 'properties' ? Object.fromEntries(Object.entries(value as Record<string, JsonSchema>).map(([name, child]) => [name, draftSchemaShape(child)]))
+      : key === 'items' ? draftSchemaShape(value as JsonSchema) : value,
+  ]));
+}
+function checkBindings(bindings: Record<string, CapabilityBinding>, state: JsonSchema, expected?: JsonSchema, draft = false): void {
   object(bindings, 'bindings');
   if (Object.keys(bindings).length > 30) fail('too many bindings');
   for (const [key, binding] of Object.entries(bindings)) {
@@ -103,7 +110,9 @@ function checkBindings(bindings: Record<string, CapabilityBinding>, state: JsonS
     if (expected && !target) fail('binding outside input schema');
     if ('field' in binding) {
       const source = capabilityFieldSchema(state, binding.field);
-      if (target && !sameSchema(source, target)) fail('incompatible field binding');
+      // Draft initial values may need editing to satisfy a stricter minimum.
+      // Operations and approvals still require the complete exact contract.
+      if (target && !sameSchema(draft ? draftSchemaShape(source) : source, draft ? draftSchemaShape(target) : target)) fail(`incompatible field binding ${key}`);
     } else if ('literal' in binding && (scalar(binding.literal) || target && JSON.stringify(binding.literal).length <= 4096)) {
       if (target && !new Ajv({ strict: true, validateFormats: false }).compile(target)(binding.literal)) fail('incompatible literal binding');
     } else fail('invalid binding');
@@ -114,12 +123,12 @@ function checkBindings(bindings: Record<string, CapabilityBinding>, state: JsonS
 /** Single pass: evidence containing template markers is inserted as data, never evaluated. */
 export function renderCapabilityTemplate(template: string, values: Record<string, unknown>, allowed: string[]): string {
   if (typeof template !== 'string' || template.length > 16000) fail('oversized template');
-  const remaining = template.replace(/\{\{([a-z][a-z0-9_]*)\}\}/g, (_match, key: string) => {
+  const remaining = template.replace(/\{\{([a-z][a-zA-Z0-9_]*)\}\}/g, (_match, key: string) => {
     if (!allowed.includes(key) || !own(values, key)) fail('undeclared template variable');
     return '';
   });
   if (/[{}]/.test(remaining)) fail('template expressions are forbidden');
-  const rendered = template.replace(/\{\{([a-z][a-z0-9_]*)\}\}/g, (_match, key: string) => typeof values[key] === 'string' ? values[key] as string : JSON.stringify(values[key]));
+  const rendered = template.replace(/\{\{([a-z][a-zA-Z0-9_]*)\}\}/g, (_match, key: string) => typeof values[key] === 'string' ? values[key] as string : JSON.stringify(values[key]));
   if (rendered.length > 96000) fail('oversized rendered prompt');
   return rendered;
 }
@@ -137,16 +146,21 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
   };
   const manifest = read('assets/capability.json') as CapabilityManifest;
   object(manifest, 'manifest');
-  keys(manifest, ['schemaVersion', 'operations', 'stateSchema', 'journey', 'copy', 'locales', 'fixtures', 'publicFields', 'continuation', 'policy', 'instructions'], 'manifest');
+  keys(manifest, ['schemaVersion', 'operations', 'stateSchema', 'journey', 'copy', 'locales', 'fixtures', 'publicFields', 'contextFields', 'entrypoint', 'authenticationCheckpoint', 'continuation', 'policy', 'instructions'], 'manifest');
   if (manifest.schemaVersion !== 2) fail('schema version must be 2');
-  list(manifest.operations, CAPABILITY_PACKAGE_LIMITS.operations, 'operations', 1);
+  // Intake-only journeys have no provider operations or operational fixtures.
+  list(manifest.operations, CAPABILITY_PACKAGE_LIMITS.operations, 'operations');
   list(manifest.publicFields, 50, 'public fields');
-  list(manifest.fixtures, 12, 'fixtures', 1);
+  list(manifest.fixtures, 12, 'fixtures', manifest.operations.length ? 1 : 0);
   const stateSchema = read(manifest.stateSchema) as JsonSchema;
   validateCapabilitySchema(stateSchema);
   if (stateSchema.type !== 'object' || stateSchema.required?.length) fail('state starts empty; slots must be optional');
   if (new Set(manifest.publicFields).size !== manifest.publicFields.length) fail('duplicate public field');
   for (const field of manifest.publicFields) { fieldName(field); if (!own(stateSchema.properties!, field)) fail('unknown public field'); }
+  if (manifest.contextFields !== undefined) {
+    list(manifest.contextFields, 8, 'context fields');
+    if (new Set(manifest.contextFields).size !== manifest.contextFields.length || manifest.contextFields.some(field => !manifest.publicFields.includes(field))) fail('invalid context field');
+  }
   const ajv = new Ajv({ strict: true, allErrors: false, validateFormats: false, ownProperties: true });
   const stateValidator = ajv.compile(stateSchema);
   const fieldValidators = Object.fromEntries(Object.entries(stateSchema.properties!).map(([key, schema]) => [key, ajv.compile(schema)]));
@@ -173,12 +187,35 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
   }
   const operations: Record<string, CompiledCapabilityOperation> = Object.create(null);
   for (const operation of manifest.operations) {
-    object(operation, 'operation'); keys(operation, ['id', 'handler', 'inputSchema', 'outputSchema', 'template', 'variables', 'instructionOperation'], 'operation'); id(operation.id);
+    object(operation, 'operation'); keys(operation, ['id', 'handler', 'inputSchema', 'outputSchema', 'template', 'variables', 'recordReferences', 'privateListSource', 'instructionOperation','dataFeedInvocation'], 'operation'); id(operation.id);
     if (own(operations, operation.id) || !own(CAPABILITY_HANDLERS, operation.handler)) fail('duplicate operation or unsupported handler');
+    if(operation.dataFeedInvocation!==undefined) {
+      object(operation.dataFeedInvocation,'Data Feed invocation');keys(operation.dataFeedInvocation,['feedId','revision'],'Data Feed invocation');
+      if(!['network-discovery','lead-search','recruiting-discovery','public-document'].includes(operation.handler)||!/^workflow\.[a-z0-9_.-]+$/.test(operation.dataFeedInvocation.feedId)||!/^[a-f0-9]{64}$/.test(operation.dataFeedInvocation.revision))fail('Data Feed migration requires a pinned supported source operation');
+    }
     const inputDefinition = read(operation.inputSchema) as JsonSchema;
     const outputDefinition = read(operation.outputSchema) as JsonSchema;
     validateCapabilitySchema(inputDefinition); validateCapabilitySchema(outputDefinition);
     if (inputDefinition.type !== 'object' || outputDefinition.type !== 'object') fail('operation schemas must be objects');
+    if (operation.handler === 'private-list-records') {
+      const source = operation.privateListSource;
+      object(source, 'private List source'); keys(source, ['listRef', 'fields', 'limit'], 'private List source');
+      object(source.listRef, 'private List reference'); keys(source.listRef, ['kind', 'resourceKey'], 'private List reference');
+      if (source.listRef.kind !== 'list' || typeof source.listRef.resourceKey !== 'string'
+        || !/^list\.[a-z0-9_.-]{1,150}$/.test(source.listRef.resourceKey)) fail('private source requires a portable List reference');
+      if (!Number.isInteger(source.limit) || source.limit < 1 || source.limit > 50) fail('private source must be bounded to 1–50 rows');
+      object(source.fields, 'private List fields');
+      const rows = outputDefinition.properties?.items;
+      if (Object.keys(inputDefinition.properties!).length || operation.template !== undefined
+        || operation.variables !== undefined || operation.instructionOperation !== undefined
+        || operation.dataFeedInvocation !== undefined
+        || Object.keys(outputDefinition.properties!).join() !== 'items'
+        || !outputDefinition.required?.includes('items') || rows?.type !== 'array'
+        || (rows.minItems ?? 0) !== 0 || rows.maxItems !== source.limit || rows.items?.type !== 'object') fail('private source requires empty inputs and a bounded items projection');
+      const fields = Object.keys(source.fields);
+      if (!fields.length || fields.length > 30 || fields.sort().join() !== Object.keys(rows.items.properties!).sort().join()) fail('private source fields must match the output projection');
+      for (const [target, column] of Object.entries(source.fields)) { fieldName(target); fieldName(column); }
+    } else if (operation.privateListSource !== undefined) fail('private List source belongs only to its installed read handler');
     if (operation.handler === 'campaign-images') {
       const sources = inputDefinition.properties?.sources;
       if (sources?.type !== 'array' || !sources.minItems || sources.maxItems! > 13 || sources.items?.type !== 'string' || sources.items.maxLength! > 160 || !inputDefinition.required?.includes('sources')) fail('campaign sources must be bounded owned media IDs');
@@ -192,9 +229,27 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
       if (!/^references\/[a-z0-9_-]+\.md$/.test(operation.template) || !own(files, operation.template)) fail('unsafe template reference');
       used.add(operation.template);
       list(operation.variables, 30, 'template variables');
-      if (new Set(operation.variables).size !== operation.variables.length || operation.variables.some(key => !/^[a-z][a-z0-9_]*$/.test(key) || !own(inputDefinition.properties!, key))) fail('invalid template variables');
+      if (new Set(operation.variables).size !== operation.variables.length || operation.variables.some(key => !/^[a-z][a-zA-Z0-9_]*$/.test(key) || !own(inputDefinition.properties!, key))) fail('invalid template variables');
       renderCapabilityTemplate(files[operation.template], Object.fromEntries(operation.variables.map(key => [key, 'fixture'])), operation.variables);
-    } else if (operation.variables !== undefined || !operation.instructionOperation && ['structured-analysis', 'text-draft', 'campaign-images'].includes(operation.handler)) fail('model operation requires a declarative template');
+    } else if (operation.variables !== undefined || !operation.instructionOperation && ['structured-analysis', 'text-draft', 'campaign-images', 'creative-reference-analysis'].includes(operation.handler)) fail('model operation requires a declarative template');
+    if (operation.recordReferences !== undefined) {
+      const references = operation.recordReferences;
+      object(references, 'record references');
+      keys(references, ['sourceField', 'outputField', 'referenceField', 'sourceKey'], 'record references');
+      const source = capabilityFieldSchema(inputDefinition, references.sourceField);
+      const result = capabilityFieldSchema(outputDefinition, references.outputField);
+      fieldName(references.referenceField);
+      const selected = result.items?.properties?.[references.referenceField];
+      if (references.sourceKey !== undefined) fieldName(references.sourceKey);
+      const sourceKey = references.sourceKey && source.items?.properties?.[references.sourceKey];
+      const usableReferences = references.sourceKey
+        ? source.items?.type === 'object' && sourceKey && ['string', 'integer'].includes(sourceKey.type!)
+          && source.items.required?.includes(references.sourceKey) && selected?.items?.type === sourceKey.type
+        : selected?.items?.type === 'integer' && selected.items.minimum === 0;
+      if (source.type !== 'array' || result.type !== 'array' || result.items?.type !== 'object'
+        || selected?.type !== 'array' || !usableReferences
+        || !result.items.required?.includes(references.referenceField)) fail('record references require bounded source keys or indexes');
+    }
     operations[operation.id] = { ...operation, inputDefinition, outputDefinition, input: ajv.compile(inputDefinition), output: ajv.compile(outputDefinition) };
   }
   const journey = read(manifest.journey) as CapabilityJourney;
@@ -202,8 +257,12 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
   list(journey.nodes, CAPABILITY_PACKAGE_LIMITS.nodes, 'nodes', 1);
   const nodes = new Map<string, CapabilityNode>();
   for (const node of journey.nodes) {
-    object(node, 'node'); keys(node, ['id', 'kind', 'blocks', 'actions', 'output', 'operation', 'bindings', 'initial', 'maxVisits'], 'node'); id(node.id);
+    object(node, 'node'); keys(node, ['id', 'kind', 'progress', 'blocks', 'actions', 'output', 'operation', 'bindings', 'initial', 'maxVisits'], 'node'); id(node.id);
     if (nodes.has(node.id) || !['input', 'operation', 'review', 'complete'].includes(node.kind)) fail('duplicate or invalid node');
+    if (node.progress !== undefined) {
+      object(node.progress, 'node progress'); keys(node.progress, ['current', 'total'], 'node progress');
+      if (!Number.isInteger(node.progress.current) || !Number.isInteger(node.progress.total) || node.progress.current < 1 || node.progress.total < 1 || node.progress.total > 20 || node.progress.current > node.progress.total) fail('invalid node progress');
+    }
     const visitLimit = node.kind === 'input' && node.blocks.some(block => block.kind === 'questionnaire') ? 20 : 3;
     if (node.maxVisits !== undefined && (!Number.isInteger(node.maxVisits) || node.maxVisits < 1 || node.maxVisits > visitLimit)) fail(`revisit bound must be 1–${visitLimit}`);
     list(node.blocks, 12, 'blocks'); list(node.actions, 6, 'actions');
@@ -215,7 +274,7 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
     if (node.kind === 'operation') {
       if (!node.operation || !own(operations, node.operation)) fail('unknown operation');
       const operation = operations[node.operation];
-      if (operation.handler === 'public-document' && manifest.publicFields.includes(node.output!)) fail('raw acquisition output must remain private');
+      if (['public-document', 'scrap-market-discovery'].includes(operation.handler) && manifest.publicFields.includes(node.output!)) fail('raw acquisition output must remain private');
       if (operation.handler === 'campaign-images' && (node.maxVisits || 1) > 1 + (manifest.policy?.maxRevisions ?? 1)) fail('image regeneration limit cannot be raised');
       checkBindings(node.bindings!, stateSchema, operation.inputDefinition);
       if (!sameSchema(stateSchema.properties![node.output!], operation.outputDefinition)) fail('operation output incompatible with state');
@@ -223,7 +282,7 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
     } else if (node.operation !== undefined || node.bindings !== undefined) fail('unexpected executable operation');
     if (node.initial !== undefined) {
       if (node.kind !== 'input' || stateSchema.properties![node.output!].type !== 'object') fail('initial bindings require an object input');
-      checkBindings(node.initial, stateSchema, { ...stateSchema.properties![node.output!], required: [] });
+      checkBindings(node.initial, stateSchema, { ...stateSchema.properties![node.output!], required: [] }, true);
       for (const binding of Object.values(node.initial)) if ('field' in binding && !manifest.publicFields.includes(binding.field.split('/')[1])) fail('private initial input binding');
     }
     const blockIds = new Set<string>();
@@ -271,26 +330,39 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
           }
         }
       }
-      if (['input', 'questionnaire', 'upload', 'media-selection'].includes(block.kind) && (node.kind !== 'input' || block.field !== `/${node.output}`)) fail('input block outside editable slot');
+      if (block.kind === 'scrap-quote' && (!block.field || !sameSchema(capabilityFieldSchema(stateSchema, block.field), SCRAP_QUOTE))) fail('scrap quote requires the fixed valuation contract');
+      if (block.kind === 'scrap-buyers' && (!block.field || ![SCRAP_BUYERS_PUBLIC, SCRAP_BUYER_PUBLIC].some(schema => sameSchema(capabilityFieldSchema(stateSchema, block.field!), schema)))) fail('scrap buyers require the redacted projection contract');
+      if (['input', 'questionnaire', 'upload', 'document-upload', 'media-selection', 'reference-selection'].includes(block.kind) && (node.kind !== 'input' || block.field !== `/${node.output}`)) fail('input block outside editable slot');
       if (block.kind === 'media-selection') {
         const selected = capabilityFieldSchema(stateSchema, block.field!);
         if (selected.type !== 'object' || Object.keys(selected.properties || {}).join() !== 'mediaIds' || !selected.required?.includes('mediaIds') || selected.properties?.mediaIds?.type !== 'array' || selected.properties.mediaIds.items?.type !== 'string' || !selected.properties.mediaIds.maxItems || selected.properties.mediaIds.maxItems > 13 || !selected.properties.mediaIds.minItems) fail('invalid media selection schema');
         if (!block.optionsField || !manifest.publicFields.includes(block.optionsField.split('/')[1])) fail('media selection requires public evidence');
         const options = capabilityFieldSchema(stateSchema, block.optionsField!);
         if (options.properties?.images?.type !== 'array' || options.properties.images.items?.properties?.id?.type !== 'string') fail('media selection requires image IDs');
+      } else if (block.kind === 'reference-selection') {
+        const selected = capabilityFieldSchema(stateSchema, block.field!);
+        if (selected.type !== 'object' || selected.properties?.mode?.type !== 'string' || !selected.properties.mode.enum?.includes('original') || !selected.properties.mode.enum?.includes('reference') || selected.properties?.candidateId?.type !== 'string' || !selected.required?.includes('mode')) fail('invalid reference selection schema');
+        if (!block.optionsField || !manifest.publicFields.includes(block.optionsField.split('/')[1])) fail('reference selection requires public candidates');
+        const options = capabilityFieldSchema(stateSchema, block.optionsField);
+        const references = options.properties?.references;
+        if (options.type !== 'object' || references?.type !== 'array' || !references.maxItems || references.maxItems > 6 || references.items?.type !== 'object' || references.items.properties?.id?.type !== 'string') fail('reference selection requires bounded candidate IDs');
       } else if (block.kind === 'questionnaire' && block.optionsField) {
         if (!manifest.publicFields.includes(block.optionsField.split('/')[1]) || !sameSchema(capabilityFieldSchema(stateSchema, block.optionsField), NORMALIZED_FORM) || !sameSchema(capabilityFieldSchema(stateSchema, block.field!), FORM_ANSWERS)) fail('questionnaire requires normalized public fields and bounded answers');
       } else if (block.kind === 'input' && block.optionsField) {
         const options = capabilityFieldSchema(stateSchema, block.optionsField);
         const selected = capabilityFieldSchema(stateSchema, block.field!);
-        if (!manifest.publicFields.includes(block.optionsField.split('/')[1]) || options.type !== 'array' || !options.maxItems || options.maxItems > 50 || selected.type !== 'object' || !options.items || !sameSchema(options.items, selected)) fail('record selection requires matching public records');
+        const recordSelection = selected.type === 'object' && options.items && sameSchema(options.items, selected) && options.maxItems! <= 50;
+        const idSelection = selected.type === 'array' && selected.items?.type === 'string' && selected.minItems! >= 1 && selected.maxItems! <= 100
+          && options.items?.type === 'object' && options.items.properties?.id?.type === 'string';
+        if (!manifest.publicFields.includes(block.optionsField.split('/')[1]) || options.type !== 'array' || !options.maxItems || options.maxItems > 100 || !recordSelection && !idSelection) fail('record selection requires matching public records or bounded record IDs');
       } else if (block.optionsField !== undefined) fail('options field requires a supported selection block');
       if (block.kind === 'upload' && !sameSchema(capabilityFieldSchema(stateSchema, block.field!), IMAGE_EVIDENCE_INPUT)) fail('upload requires the fixed media input contract');
+      if (block.kind === 'document-upload' && !sameSchema(capabilityFieldSchema(stateSchema, block.field!), DOCUMENT_UPLOAD_INPUT)) fail('document upload requires the fixed document input contract');
       if (block.kind === 'login' && (node.kind !== 'complete' || !manifest.continuation)) fail('login requires terminal continuation');
       if (block.labels !== undefined && block.field === undefined) fail('field labels require a field');
       if (block.enumLabels !== undefined && block.field === undefined) fail('enum labels require a field');
     }
-    if (node.kind === 'input' && node.blocks.filter(block => ['input', 'questionnaire', 'upload', 'media-selection'].includes(block.kind)).length !== 1) fail('input node requires exactly one editable block');
+    if (node.kind === 'input' && node.blocks.filter(block => ['input', 'questionnaire', 'upload', 'document-upload', 'media-selection', 'reference-selection'].includes(block.kind)).length !== 1) fail('input node requires exactly one editable block');
     if (node.kind === 'operation' && node.actions.filter(action => !action.when).length !== 1) fail('operation requires exactly one fallback transition');
     const actionIds = new Set<string>();
     for (const action of node.actions) {
@@ -320,12 +392,43 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
   }
   if (!nodes.has(journey.start)) fail('missing start node');
   for (const node of nodes.values()) for (const action of node.actions) if (!nodes.has(action.target)) fail('missing transition target');
+  if (manifest.entrypoint) {
+    const entrypoint = manifest.entrypoint;
+    object(entrypoint, 'entrypoint'); keys(entrypoint, ['field', 'values'], 'entrypoint');
+    const schema = capabilityFieldSchema(stateSchema, entrypoint.field);
+    if (!manifest.contextFields?.includes(entrypoint.field.slice(1)) || schema.type !== 'string' || !schema.enum?.length) fail('entrypoint must use an enumerated context field');
+    object(entrypoint.values, 'entrypoint values');
+    if (Object.keys(entrypoint.values).sort().join() !== schema.enum.map(String).sort().join()) fail('entrypoint values must cover every context choice');
+    for (const [value, target] of Object.entries(entrypoint.values)) {
+      if (!schema.enum.includes(value)) fail('unknown entrypoint value');
+      id(target);
+      if (!nodes.has(target) || nodes.get(target)?.kind === 'complete') fail('invalid entrypoint target');
+    }
+  }
+  if (manifest.authenticationCheckpoint) {
+    const checkpoint = manifest.authenticationCheckpoint;
+    object(checkpoint, 'authentication checkpoint');
+    keys(checkpoint, ['node', 'resumeNode', 'preserveFields', 'approvalFields', 'profileModeField', 'authenticatedField', 'authenticatedValue'], 'authentication checkpoint');
+    id(checkpoint.node); id(checkpoint.resumeNode);
+    const gate = nodes.get(checkpoint.node);
+    if (gate?.kind !== 'complete' || !gate.blocks.some(block => block.kind === 'login')) fail('authentication checkpoint must be a login completion');
+    if (!nodes.has(checkpoint.resumeNode) || nodes.get(checkpoint.resumeNode)?.kind === 'complete') fail('invalid authentication resume node');
+    list(checkpoint.preserveFields, 20, 'authentication preserve fields', 1);
+    list(checkpoint.approvalFields, 20, 'authentication approval fields', 1);
+    for (const field of [...checkpoint.preserveFields, ...checkpoint.approvalFields, checkpoint.profileModeField, checkpoint.authenticatedField]) {
+      const schema = capabilityFieldSchema(stateSchema, field);
+      if (!manifest.publicFields.includes(field.split('/')[1])) fail('authentication checkpoint may preserve only public fields');
+      if (field === checkpoint.authenticatedField && (schema.type !== 'string' || !schema.enum?.includes(checkpoint.authenticatedValue))) fail('invalid authenticated checkpoint value');
+    }
+    if (!checkpoint.preserveFields.includes(checkpoint.profileModeField)) fail('authentication checkpoint must preserve the profile mode');
+    if (checkpoint.approvalFields.some(field => !checkpoint.preserveFields.some(preserved => field === preserved || field.startsWith(`${preserved}/`)))) fail('authentication approval field is not preserved');
+  }
   if (manifest.continuation) {
     const continuation = manifest.continuation;
-    object(continuation, 'continuation'); keys(continuation, ['adapter', 'bindings', 'approvalFields'], 'continuation');
-    if (!['archer-images', 'form-answers', 'grocery-inventory', 'lead-launch', 'private-chat'].includes(continuation.adapter)) fail('unknown continuation');
+    object(continuation, 'continuation'); keys(continuation, ['adapter', 'bindings', 'approvalFields', 'workspaceRecord'], 'continuation');
+    if (!['archer-images', 'form-answers', 'grocery-inventory', 'reviewed-items', 'lead-launch', 'command-launch', 'lead-search', 'connection-research', 'command-inputs', 'private-chat', 'workspace-record'].includes(continuation.adapter)) fail('unknown continuation');
     checkBindings(continuation.bindings, stateSchema);
-    if (continuation.adapter !== 'private-chat') {
+    if (continuation.adapter !== 'private-chat' && continuation.adapter !== 'command-inputs' && continuation.adapter !== 'command-launch' && continuation.adapter !== 'workspace-record') {
       const expected = CAPABILITY_CONTINUATION_INPUTS[continuation.adapter];
       if (Object.keys(continuation.bindings).sort().join() !== Object.keys(expected).sort().join()) fail('invalid continuation inputs');
       for (const [key, type] of Object.entries(expected)) {
@@ -341,6 +444,62 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
     }
     for (const binding of Object.values(continuation.bindings)) {
       if ('field' in binding && !continuation.approvalFields.some(field => binding.field === field || binding.field.startsWith(`${field}/`))) fail('continuation input is not covered by approval');
+    }
+    if (continuation.adapter === 'workspace-record' && !continuation.workspaceRecord) fail('workspace continuation requires a record');
+    if (continuation.workspaceRecord) {
+      if (!['command-launch', 'workspace-record'].includes(continuation.adapter)) fail('workspace record requires a workspace continuation');
+      const workspaceRecord = continuation.workspaceRecord;
+      object(workspaceRecord, 'continuation workspace record');
+      keys(workspaceRecord, ['activeProfile', 'identityField', 'profileModeField', 'fieldBindings', 'defaults', 'approvalFingerprintField', 'createdAtField', 'previewIdField', 'sessionIdField', 'emailDelivery', 'destination'], 'continuation workspace record');
+      if (workspaceRecord.activeProfile !== true) fail('workspace record must use active profile');
+      const fieldName = (value: unknown) => typeof value === 'string' && /^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(value);
+      for (const value of [workspaceRecord.identityField, workspaceRecord.profileModeField, workspaceRecord.approvalFingerprintField, workspaceRecord.createdAtField, workspaceRecord.previewIdField, workspaceRecord.sessionIdField].filter(Boolean)) {
+        if (!fieldName(value)) fail('invalid workspace record field');
+      }
+      object(workspaceRecord.fieldBindings, 'workspace record bindings');
+      if (!Object.keys(workspaceRecord.fieldBindings).length || Object.keys(workspaceRecord.fieldBindings).length > 50) fail('invalid workspace record bindings');
+      for (const key of Object.keys(workspaceRecord.fieldBindings)) if (!fieldName(key)) fail('invalid workspace record field');
+      for (const binding of Object.values(workspaceRecord.fieldBindings)) {
+        object(binding, 'workspace record binding');
+        const fields = 'fields' in binding ? binding.fields : 'field' in binding ? [binding.field] : [];
+        if ('fields' in binding) {
+          keys(binding, ['fields'], 'workspace record fallback binding');
+          list(binding.fields, 10, 'workspace record fallback fields', 1);
+          if (binding.fields.some(field => typeof field !== 'string')) fail('invalid workspace record fallback field');
+        } else checkBindings({ value: binding }, stateSchema);
+        for (const field of fields) {
+          capabilityFieldSchema(stateSchema, field);
+          if (!continuation.approvalFields.some(approved => field === approved || field.startsWith(`${approved}/`))) fail('workspace record binding is not covered by approval');
+        }
+      }
+      if (workspaceRecord.defaults !== undefined) {
+        object(workspaceRecord.defaults, 'workspace record defaults');
+        if (Object.keys(workspaceRecord.defaults).length > 30) fail('too many workspace record defaults');
+        for (const key of Object.keys(workspaceRecord.defaults)) if (!fieldName(key)) fail('invalid workspace record field');
+      }
+      if (workspaceRecord.emailDelivery !== undefined) {
+        const delivery = workspaceRecord.emailDelivery;
+        object(delivery, 'workspace record email delivery');
+        keys(delivery, ['actionField', 'draftValue', 'sendValue', 'emailField', 'subjectField', 'bodyField', 'contactStatusField', 'contactAvailableValue', 'deliveryStateField', 'receiptField', 'recordStatusField', 'approvedStatusValue'], 'workspace record email delivery');
+        const stateFields = [delivery.actionField, delivery.emailField, delivery.subjectField, delivery.bodyField, delivery.contactStatusField];
+        for (const field of stateFields) {
+          const schema = capabilityFieldSchema(stateSchema, field);
+          if (schema.type !== 'string') fail('email delivery fields must be strings');
+          if (!continuation.approvalFields.some(approved => field === approved || field.startsWith(`${approved}/`))) fail('email delivery field is not covered by approval');
+        }
+        const actionSchema = capabilityFieldSchema(stateSchema, delivery.actionField);
+        const contactSchema = capabilityFieldSchema(stateSchema, delivery.contactStatusField);
+        if (!actionSchema.enum?.includes(delivery.draftValue) || !actionSchema.enum?.includes(delivery.sendValue)) fail('invalid email delivery action values');
+        if (!contactSchema.enum?.includes(delivery.contactAvailableValue)) fail('invalid email delivery contact value');
+        for (const value of [delivery.deliveryStateField, delivery.receiptField, delivery.recordStatusField].filter(Boolean)) if (!fieldName(value)) fail('invalid email delivery record field');
+        if (delivery.approvedStatusValue !== undefined && typeof delivery.approvedStatusValue !== 'string') fail('invalid email delivery record status');
+      }
+      if (workspaceRecord.destination !== undefined) {
+        object(workspaceRecord.destination, 'workspace record destination');
+        keys(workspaceRecord.destination, ['appView', 'tabId'], 'workspace record destination');
+        if (workspaceRecord.destination.appView !== 'dashboard') fail('invalid workspace record destination');
+        if (workspaceRecord.destination.tabId !== undefined) id(workspaceRecord.destination.tabId);
+      }
     }
   }
   validateGraph(journey, operations, manifest, stateSchema);
@@ -374,7 +533,7 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
   }
   for (const operation of Object.values(operations)) {
     if (operation.instructionOperation === undefined) continue;
-    const expectedHandler = { 'analyze-instagram-brand': 'structured-analysis', 'prepare-event-brief': 'structured-analysis', 'build-campaign-image-prompts': 'campaign-images' };
+    const expectedHandler = { 'analyze-instagram-brand': 'structured-analysis', 'prepare-event-brief': 'structured-analysis', 'build-campaign-image-prompts': 'campaign-images', 'analyze-capture': 'structured-analysis', 'revise-inventory': 'structured-analysis', 'build-dietary-plan': 'text-draft' };
     if (!own(expectedHandler, operation.instructionOperation) || expectedHandler[operation.instructionOperation] !== operation.handler || !instructions?.operations[operation.instructionOperation]) fail('unsupported instruction consumer');
   }
   if (entries.some(([path]) => !used.has(path))) fail('unreferenced package file');
@@ -384,9 +543,14 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
 /** Meet-over-all-paths approval analysis. Runtime still checks approval fingerprints. */
 function validateGraph(journey: CapabilityJourney, operations: Record<string, CompiledCapabilityOperation>, manifest: CapabilityManifest, stateSchema: JsonSchema): void {
   const nodes = new Map(journey.nodes.map(node => [node.id, node]));
+  const roots = new Set([
+    journey.start,
+    ...Object.values(manifest.entrypoint?.values || {}),
+    ...(manifest.authenticationCheckpoint ? [manifest.authenticationCheckpoint.resumeNode] : []),
+  ]);
   const reachable = new Set<string>();
   const walk = (node: string) => { if (reachable.has(node)) return; reachable.add(node); nodes.get(node)!.actions.forEach(action => walk(action.target)); };
-  walk(journey.start);
+  roots.forEach(walk);
   if (reachable.size !== nodes.size || !journey.nodes.some(node => node.kind === 'complete')) fail('unreachable node or missing completion');
   const invalidatedSlots = (node: CapabilityNode): Set<string> => {
     const invalidated = new Set(node.output ? [node.output] : []);
@@ -407,7 +571,12 @@ function validateGraph(journey: CapabilityJourney, operations: Record<string, Co
   // branch. Require definitely assigned root slots before required reads. Leaf
   // optional/missing-field checks still execute against the schema at runtime.
   const slots = Object.keys(stateSchema.properties!);
-  const available = new Map(journey.nodes.map(node => [node.id, new Set(node.id === journey.start ? [] : slots)]));
+  const resumeSlots = new Set((manifest.authenticationCheckpoint?.preserveFields || []).map(field => field.split('/')[1]));
+  const available = new Map(journey.nodes.map(node => [node.id, new Set(
+    node.id === manifest.authenticationCheckpoint?.resumeNode
+      ? resumeSlots
+      : roots.has(node.id) ? manifest.contextFields || [] : slots,
+  )]));
   const afterWrite = (node: CapabilityNode) => {
     const invalidated = invalidatedSlots(node);
     const result = new Set([...available.get(node.id)!].filter(slot => !invalidated.has(slot)));
@@ -417,7 +586,7 @@ function validateGraph(journey: CapabilityJourney, operations: Record<string, Co
   let availabilityChanged = true;
   while (availabilityChanged) {
     availabilityChanged = false;
-    for (const node of journey.nodes.filter(item => item.id !== journey.start)) {
+    for (const node of journey.nodes.filter(item => !roots.has(item.id))) {
       const incoming = journey.nodes.filter(source => source.actions.some(action => action.target === node.id)).map(afterWrite);
       const common = new Set(slots.filter(slot => incoming.length && incoming.every(fields => fields.has(slot))));
       if ([...common].sort().join() !== [...available.get(node.id)!].sort().join()) { available.set(node.id, common); availabilityChanged = true; }
@@ -437,6 +606,7 @@ function validateGraph(journey: CapabilityJourney, operations: Record<string, Co
   // Facts include scope: approving a harmless field cannot authorize spending on
   // other inputs. Kill approvals after upstream writes, including derived slots.
   const requirements = (node: CapabilityNode): Array<[ApprovalKind, string]> => {
+    if (node.kind === 'complete' && manifest.authenticationCheckpoint?.node === node.id) return manifest.authenticationCheckpoint.approvalFields.map(field => ['content_approval', field]);
     if (node.kind === 'complete' && manifest.continuation) return manifest.continuation.approvalFields.map(field => ['content_approval', field]);
     if (!node.operation) return [];
     return CAPABILITY_HANDLERS[operations[node.operation].handler].approvals.flatMap(kind => {
@@ -447,7 +617,12 @@ function validateGraph(journey: CapabilityJourney, operations: Record<string, Co
     });
   };
   const atoms = [...new Set(journey.nodes.flatMap(node => requirements(node).map(([kind, field]) => `${kind}:${field}`)))];
-  const approvals = new Map<string, Set<string>>(journey.nodes.map(node => [node.id, new Set(node.id === journey.start ? [] : atoms)]));
+  const resumedApprovals = new Set((manifest.authenticationCheckpoint?.approvalFields || []).map(field => `content_approval:${field}`));
+  const approvals = new Map<string, Set<string>>(journey.nodes.map(node => [node.id, new Set(
+    node.id === manifest.authenticationCheckpoint?.resumeNode
+      ? resumedApprovals
+      : roots.has(node.id) ? [] : atoms,
+  )]));
   const outgoing = (node: CapabilityNode, action: CapabilityNode['actions'][number]): Set<string> => {
     const invalidated = invalidatedSlots(node);
     const facts = new Set([...approvals.get(node.id)!].filter(atom => !invalidated.has(atom.split(':')[1].split('/')[1])));
@@ -464,7 +639,7 @@ function validateGraph(journey: CapabilityJourney, operations: Record<string, Co
   let changed = true;
   while (changed) {
     changed = false;
-    for (const target of journey.nodes.filter(node => node.id !== journey.start)) {
+    for (const target of journey.nodes.filter(node => !roots.has(node.id))) {
       const incoming = journey.nodes.flatMap(node => node.actions.filter(action => action.target === target.id).map(action => outgoing(node, action)));
       const intersection = new Set(atoms.filter(atom => incoming.length && incoming.every(set => set.has(atom))));
       if ([...approvals.get(target.id)!].sort().join() !== [...intersection].sort().join()) { approvals.set(target.id, intersection); changed = true; }
