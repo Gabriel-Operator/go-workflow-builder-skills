@@ -146,8 +146,9 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
   };
   const manifest = read('assets/capability.json') as CapabilityManifest;
   object(manifest, 'manifest');
-  keys(manifest, ['schemaVersion', 'operations', 'stateSchema', 'journey', 'copy', 'locales', 'fixtures', 'publicFields', 'contextFields', 'entrypoint', 'authenticationCheckpoint', 'continuation', 'policy', 'instructions'], 'manifest');
+  keys(manifest, ['schemaVersion', 'operations', 'stateSchema', 'journey', 'copy', 'locales', 'fixtures', 'publicFields', 'contextFields', 'entrypoint', 'authenticationCheckpoint', 'continuation', 'policy', 'instructions', 'teamExecution'], 'manifest');
   if (manifest.schemaVersion !== 2) fail('schema version must be 2');
+  if (manifest.teamExecution !== undefined && typeof manifest.teamExecution !== 'boolean') fail('teamExecution must be boolean');
   // Intake-only journeys have no provider operations or operational fixtures.
   list(manifest.operations, CAPABILITY_PACKAGE_LIMITS.operations, 'operations');
   list(manifest.publicFields, 50, 'public fields');
@@ -187,11 +188,14 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
   }
   const operations: Record<string, CompiledCapabilityOperation> = Object.create(null);
   for (const operation of manifest.operations) {
-    object(operation, 'operation'); keys(operation, ['id', 'handler', 'inputSchema', 'outputSchema', 'template', 'variables', 'recordReferences', 'privateListSource', 'instructionOperation','dataFeedInvocation'], 'operation'); id(operation.id);
+    object(operation, 'operation'); keys(operation, ['id', 'handler', 'inputSchema', 'outputSchema', 'template', 'variables', 'groundedValues','recordReferences', 'privateListSource', 'instructionOperation','dataFeedInvocation','communityActivityAction'], 'operation'); id(operation.id);
     if (own(operations, operation.id) || !own(CAPABILITY_HANDLERS, operation.handler)) fail('duplicate operation or unsupported handler');
+    if (operation.handler === 'community-activities') {
+      if (!['context','discover','refresh','publish','join','check_in','impact','signals','external_context','existing_context'].includes(String(operation.communityActivityAction))) fail('fixed community activity operation required');
+    } else if (operation.communityActivityAction !== undefined) fail('community action belongs only to its installed handler');
     if(operation.dataFeedInvocation!==undefined) {
       object(operation.dataFeedInvocation,'Data Feed invocation');keys(operation.dataFeedInvocation,['feedId','revision'],'Data Feed invocation');
-      if(!['network-discovery','lead-search','recruiting-discovery','public-document'].includes(operation.handler)||!/^workflow\.[a-z0-9_.-]+$/.test(operation.dataFeedInvocation.feedId)||!/^[a-f0-9]{64}$/.test(operation.dataFeedInvocation.revision))fail('Data Feed migration requires a pinned supported source operation');
+      if(!['network-discovery','lead-search','recruiting-discovery','public-document','community-activities'].includes(operation.handler)||!/^workflow\.[a-z0-9_.-]+$/.test(operation.dataFeedInvocation.feedId)||!/^[a-f0-9]{64}$/.test(operation.dataFeedInvocation.revision))fail('Data Feed migration requires a pinned supported source operation');
     }
     const inputDefinition = read(operation.inputSchema) as JsonSchema;
     const outputDefinition = read(operation.outputSchema) as JsonSchema;
@@ -232,6 +236,7 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
       if (new Set(operation.variables).size !== operation.variables.length || operation.variables.some(key => !/^[a-z][a-zA-Z0-9_]*$/.test(key) || !own(inputDefinition.properties!, key))) fail('invalid template variables');
       renderCapabilityTemplate(files[operation.template], Object.fromEntries(operation.variables.map(key => [key, 'fixture'])), operation.variables);
     } else if (operation.variables !== undefined || !operation.instructionOperation && ['structured-analysis', 'text-draft', 'campaign-images', 'creative-reference-analysis'].includes(operation.handler)) fail('model operation requires a declarative template');
+    if(operation.groundedValues!==undefined){list(operation.groundedValues,20,'grounded values',1);for(const binding of operation.groundedValues){object(binding,'grounded binding');keys(binding,['inputField','outputField','mode'],'grounded binding');const source=capabilityFieldSchema(inputDefinition,binding.inputField),target=capabilityFieldSchema(outputDefinition,binding.outputField);if(!['equal','subset'].includes(binding.mode)||source.type!==target.type||binding.mode==='subset'&&(source.type!=='array'||source.items?.type!==target.items?.type))fail('grounded values need compatible bounded fields');}}
     if (operation.recordReferences !== undefined) {
       const references = operation.recordReferences;
       object(references, 'record references');
@@ -287,7 +292,7 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
     }
     const blockIds = new Set<string>();
     for (const block of node.blocks) {
-      object(block, 'block'); keys(block, ['id', 'kind', 'label', 'labelValues', 'field', 'labels', 'enumLabels', 'optionsField'], 'block'); id(block.id); label(block.label);
+      object(block, 'block'); keys(block, ['id', 'kind', 'label', 'labelValues', 'field', 'labels', 'enumLabels', 'optionsField','optionSelectionField','inputPresentation','controlLabels','fieldVisibility'], 'block'); id(block.id); label(block.label);
       if (block.labelValues !== undefined) {
         checkBindings(block.labelValues, stateSchema);
         const placeholders = [...copy[block.label].matchAll(/\{([a-z][a-zA-Z0-9_]*)\}/g)].map(match => match[1]);
@@ -330,6 +335,18 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
           }
         }
       }
+      if (block.fieldVisibility !== undefined) {
+        object(block.fieldVisibility, 'field visibility');
+        if (block.kind !== 'input' || !block.field) fail('field visibility requires an input block');
+        const properties = capabilityFieldSchema(stateSchema, block.field).properties || {};
+        for (const [name, condition] of Object.entries(block.fieldVisibility)) {
+          if (!own(properties, name)) fail('field visibility names an unknown input field');
+          object(condition, 'visibility condition'); keys(condition, ['field', 'test', 'value'], 'visibility condition');
+          const conditionSchema = capabilityFieldSchema(stateSchema, condition.field);
+          if (!manifest.publicFields.includes(condition.field.split('/')[1]) || condition.test !== 'equals' || condition.value === null || !scalar(condition.value) || !ajv.compile(conditionSchema)(condition.value)) fail('field visibility requires a public compatible scalar');
+        }
+      }
+      if(block.inputPresentation!==undefined){if(block.inputPresentation!=='community-publication'||block.kind!=='input')fail('unsupported input presentation');const fields=capabilityFieldSchema(stateSchema,block.field!).properties;if(fields?.venue?.type!=='string'||fields.latitude?.type!=='number'||fields.longitude?.type!=='number'||fields.publicVenueConfirmed?.type!=='boolean')fail('community publication requires the registered venue fields');object(block.controlLabels,'control labels');for(const key of ['search','select','error'])label(block.controlLabels[key]);}
       if (block.kind === 'scrap-quote' && (!block.field || !sameSchema(capabilityFieldSchema(stateSchema, block.field), SCRAP_QUOTE))) fail('scrap quote requires the fixed valuation contract');
       if (block.kind === 'scrap-buyers' && (!block.field || ![SCRAP_BUYERS_PUBLIC, SCRAP_BUYER_PUBLIC].some(schema => sameSchema(capabilityFieldSchema(stateSchema, block.field!), schema)))) fail('scrap buyers require the redacted projection contract');
       if (['input', 'questionnaire', 'upload', 'document-upload', 'media-selection', 'reference-selection'].includes(block.kind) && (node.kind !== 'input' || block.field !== `/${node.output}`)) fail('input block outside editable slot');
@@ -352,9 +369,11 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
         const options = capabilityFieldSchema(stateSchema, block.optionsField);
         const selected = capabilityFieldSchema(stateSchema, block.field!);
         const recordSelection = selected.type === 'object' && options.items && sameSchema(options.items, selected) && options.maxItems! <= 50;
+        const objectIdSelection=selected.type==='object'&&typeof block.optionSelectionField==='string'&&selected.properties?.[block.optionSelectionField]?.type==='string'&&options.items?.properties?.id?.type==='string';
+        if(block.optionSelectionField&&!objectIdSelection)fail('selected record ID must bind a declared string field');
         const idSelection = selected.type === 'array' && selected.items?.type === 'string' && selected.minItems! >= 1 && selected.maxItems! <= 100
           && options.items?.type === 'object' && options.items.properties?.id?.type === 'string';
-        if (!manifest.publicFields.includes(block.optionsField.split('/')[1]) || options.type !== 'array' || !options.maxItems || options.maxItems > 100 || !recordSelection && !idSelection) fail('record selection requires matching public records or bounded record IDs');
+        if (!manifest.publicFields.includes(block.optionsField.split('/')[1]) || options.type !== 'array' || !options.maxItems || options.maxItems > 100 || !recordSelection && !idSelection && !objectIdSelection) fail('record selection requires matching public records or bounded record IDs');
       } else if (block.optionsField !== undefined) fail('options field requires a supported selection block');
       if (block.kind === 'upload' && !sameSchema(capabilityFieldSchema(stateSchema, block.field!), IMAGE_EVIDENCE_INPUT)) fail('upload requires the fixed media input contract');
       if (block.kind === 'document-upload' && !sameSchema(capabilityFieldSchema(stateSchema, block.field!), DOCUMENT_UPLOAD_INPUT)) fail('document upload requires the fixed document input contract');

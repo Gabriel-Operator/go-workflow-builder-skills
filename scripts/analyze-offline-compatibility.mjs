@@ -26,6 +26,7 @@ const nestedKeys = ['steps', 'body', 'then', 'else', 'nodes', 'children'];
 
 export function analyzeOfflinePlaybook(playbook, capabilities = {}) {
   const blockers = [];
+  if(playbook?.team)blockers.push({path:'team',operation:'team-agents',requirement:'gabriel-node-runtime',reason:'Reviewed Team Agents require server-owned confirmation, governance, durable task/audit and framework context. This local adapter cannot enforce them.'});
   let supportedStepCount = 0;
   const visit = (step, stepPath) => {
     const operation = String(step?.operation || step?.type || 'unknown');

@@ -21,6 +21,7 @@ export const CAPABILITY_HANDLERS = {
   'network-discovery': { asynchronous: true, approvals: [] },
   'recruiting-discovery': { asynchronous: true, approvals: [] },
   'private-list-records': { asynchronous: true, approvals: [] },
+  'community-activities': { asynchronous: true, approvals: [] },
 } as const;
 export type CapabilityHandler = keyof typeof CAPABILITY_HANDLERS;
 export type ApprovalKind = 'source_permission' | 'generation_confirmation' | 'content_approval' | 'input_confirmation';
@@ -97,9 +98,12 @@ export type CapabilityOperation = {
     fields: Record<string, string>;
     limit: number;
   };
+  /** Fixed service operation. Identity, school and geofence are always server-derived. */
+  communityActivityAction?: 'context' | 'discover' | 'refresh' | 'publish' | 'join' | 'check_in' | 'impact' | 'signals' | 'external_context' | 'existing_context';
   template?: string;
   variables?: string[];
   /** Model results may reference only records in this approved input array. */
+  groundedValues?:Array<{inputField:string;outputField:string;mode:'equal'|'subset'}>;
   recordReferences?: { sourceField: string; outputField: string; referenceField: string; sourceKey?: string };
   /** Installed instruction consumer. Uses the embedded immutable Phase 1 contract. */
   instructionOperation?: 'analyze-instagram-brand' | 'prepare-event-brief' | 'build-campaign-image-prompts' | 'analyze-capture' | 'revise-inventory' | 'build-dietary-plan';
@@ -118,6 +122,12 @@ export type CapabilityBlock = {
   enumLabels?: Record<string, string[]>;
   /** Public evidence object containing images; selection never accepts URLs. */
   optionsField?: string;
+  /** A record-ID property within an object-shaped selection. */
+  optionSelectionField?: string;
+  inputPresentation?:'community-publication';
+  controlLabels?:Record<string,string>;
+  /** UI visibility only; hidden values remain subject to the full server schema. */
+  fieldVisibility?:Record<string, Extract<CapabilityCondition, { test: 'equals' }>>;
 };
 export type CapabilityAction = {
   id: string;
@@ -221,6 +231,8 @@ export type CapabilityManifest = {
   /** Phase 1 instructions reused by authenticated services at this exact pin. */
   instructions?: { domain?: keyof typeof DOMAIN_PREVIEW_OPERATIONS; operations: PreviewInstructionOperation[] };
   policy?: { maxRevisions?: number; maxImages?: number; protectedTerms?: string[] };
+  /** Execute registered operations under this command's reviewed local team. */
+  teamExecution?: boolean;
 };
 export type CapabilityJourney = { start: string; nodes: CapabilityNode[] };
 export type CapabilityApproval = { kind: ApprovalKind; fields: string[]; fingerprint: string; createdAt: string };
