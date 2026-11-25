@@ -477,6 +477,8 @@ function validateStep(
         && (typeof cfg.execution.toolId !== "string" || !cfg.execution.toolId.trim())
       ) {
         err(`${p}.personaCapabilityConfig.execution.toolId`, "is required");
+      } else if (cfg.kind === 'tool' && cfg.execution.toolInputs !== undefined && !isObject(cfg.execution.toolInputs)) {
+        err(`${p}.personaCapabilityConfig.execution.toolInputs`, 'must be a JSON object for direct native execution');
       } else if (
         cfg.kind === "workflow_endpoint"
         && (

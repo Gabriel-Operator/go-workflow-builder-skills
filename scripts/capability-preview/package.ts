@@ -10,7 +10,7 @@ const dangerous = /^(?:html|jsx|css|javascript|script|scripts|code|eval|expressi
 const identifier = /^[a-z][a-z0-9_-]{0,63}$/;
 const copyKey = /^[a-z][a-zA-Z0-9_.-]{0,95}$/;
 const approvalKinds: ApprovalKind[] = ['source_permission', 'generation_confirmation', 'content_approval', 'input_confirmation'];
-const schemaKeys = new Set(['type', 'properties', 'required', 'additionalProperties', 'items', 'maxItems', 'minItems', 'maxLength', 'minLength', 'minimum', 'maximum', 'enum', 'const', 'title', 'description']);
+const schemaKeys = new Set(['type', 'properties', 'required', 'additionalProperties', 'items', 'maxItems', 'minItems', 'maxLength', 'minLength', 'minimum', 'maximum', 'enum', 'const', 'title', 'description', 'format']);
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 export type CompiledCapabilityOperation = CapabilityOperation & { input: ValidateFunction; output: ValidateFunction; inputDefinition: JsonSchema; outputDefinition: JsonSchema };
 export type CompiledCapabilityPackage = {
@@ -27,6 +27,13 @@ export type CompiledCapabilityPackage = {
   copy: Record<string, string>;
   copyCatalogue: Record<string, Record<string, string>>;
 };
+
+function capabilityAjv() {
+  return new Ajv({ strict: true, allErrors: false, ownProperties: true }).addFormat('date', {
+    type: 'string',
+    validate: (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value,
+  });
+}
 
 function fail(message: string): never { throw new Error(`Invalid capability package: ${message}`); }
 function object(value: unknown, label: string): asserts value is Record<string, any> {
@@ -52,6 +59,7 @@ export function validateCapabilitySchema(value: unknown, depth = 0): asserts val
   if (depth > 12 || Object.keys(value).some(key => !schemaKeys.has(key))) fail('unsupported or excessive schema');
   if (!['object', 'array', 'string', 'number', 'integer', 'boolean', 'null'].includes(value.type)) fail('explicit schema type required');
   for (const key of ['title', 'description']) if (value[key] !== undefined && (typeof value[key] !== 'string' || value[key].length > 1000)) fail('invalid schema annotation');
+  if (value.format !== undefined && (value.type !== 'string' || value.format !== 'date')) fail('only string date format is supported');
   if (value.type === 'object') {
     object(value.properties, 'schema properties');
     if (value.additionalProperties !== false || Object.keys(value.properties).length > 50) fail('closed bounded object required');
@@ -114,7 +122,7 @@ function checkBindings(bindings: Record<string, CapabilityBinding>, state: JsonS
       // Operations and approvals still require the complete exact contract.
       if (target && !sameSchema(draft ? draftSchemaShape(source) : source, draft ? draftSchemaShape(target) : target)) fail(`incompatible field binding ${key}`);
     } else if ('literal' in binding && (scalar(binding.literal) || target && JSON.stringify(binding.literal).length <= 4096)) {
-      if (target && !new Ajv({ strict: true, validateFormats: false }).compile(target)(binding.literal)) fail('incompatible literal binding');
+      if (target && !capabilityAjv().compile(target)(binding.literal)) fail('incompatible literal binding');
     } else fail('invalid binding');
   }
   if (expected?.required?.some(key => !own(bindings, key))) fail('missing required input binding');
@@ -162,7 +170,7 @@ export function validateCapabilityPackage(files: Record<string, string>): Compil
     list(manifest.contextFields, 8, 'context fields');
     if (new Set(manifest.contextFields).size !== manifest.contextFields.length || manifest.contextFields.some(field => !manifest.publicFields.includes(field))) fail('invalid context field');
   }
-  const ajv = new Ajv({ strict: true, allErrors: false, validateFormats: false, ownProperties: true });
+  const ajv = capabilityAjv();
   const stateValidator = ajv.compile(stateSchema);
   const fieldValidators = Object.fromEntries(Object.entries(stateSchema.properties!).map(([key, schema]) => [key, ajv.compile(schema)]));
   const copy = read(manifest.copy) as Record<string, string>;

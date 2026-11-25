@@ -2,9 +2,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dataFeedEndpoint = exports.dataFeedDisplayType = exports.DATA_FEED_MODE_LABELS = exports.DATA_FEED_ACQUISITION_MODES = exports.DATA_FEED_TYPE_LABELS = exports.DATA_FEED_TYPES = exports.DATA_FEED_OPERATIONS = void 0;
-exports.DATA_FEED_OPERATIONS = ['create', 'read', 'update', 'delete'];
-exports.DATA_FEED_TYPES = ['email', 'file', 'transaction', 'calendar', 'message', 'portal', 'source'];
-exports.DATA_FEED_TYPE_LABELS = { email: 'Email', file: 'File', transaction: 'Transaction', calendar: 'Calendar', message: 'Message', portal: 'Portal', source: 'Source', general: 'General' };
+/** `publish` performs an action on an external service: posts, schedules or sends something people can see. */
+exports.DATA_FEED_OPERATIONS = ['create', 'read', 'update', 'delete', 'publish'];
+exports.DATA_FEED_TYPES = ['email', 'file', 'transaction', 'calendar', 'message', 'portal', 'source', 'social', 'analytics'];
+exports.DATA_FEED_TYPE_LABELS = { email: 'Email', file: 'File', transaction: 'Transaction', calendar: 'Calendar', message: 'Message', portal: 'Portal', source: 'Source', social: 'Social', analytics: 'Analytics', general: 'General' };
 exports.DATA_FEED_ACQUISITION_MODES = ['on_demand', 'push', 'pull', 'watch', 'scheduled', 'event_driven', 'user_solicited', 'device_captured'];
 exports.DATA_FEED_MODE_LABELS = { on_demand: 'On demand', push: 'Push', pull: 'Pull', watch: 'Watch', scheduled: 'Scheduled', event_driven: 'Event driven', user_solicited: 'Request input', device_captured: 'Device capture' };
 /** Existing untyped definitions keep their revision and remain inspectable. */

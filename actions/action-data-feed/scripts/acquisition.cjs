@@ -30,7 +30,7 @@ function read(value, path) {
 }
 function validateFeedAcquisitionDefinition(d) {
     if (d.type !== undefined && !data_feed_types_cjs_1.DATA_FEED_TYPES.includes(d.type))
-        fail('INVALID_FEED_TYPE', 'Choose Email, File, Transaction, Calendar, Message, Portal or Source.');
+        fail('INVALID_FEED_TYPE', 'Choose Email, File, Transaction, Calendar, Message, Portal, Source, Social or Analytics.');
     if (d.type === 'source' && (d.outputKind !== 'sources' || d.ontology?.entityType !== 'Source'))
         fail('INVALID_SOURCE_TYPE', 'Source feeds return sources and reference the Persona Source entity.');
     if (d.outputKind === 'sources' && d.type !== undefined && d.type !== 'source')

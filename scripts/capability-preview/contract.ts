@@ -73,7 +73,7 @@ export type CreativeReferenceProvenance = {
 export type JsonSchema = {
   type?: string; properties?: Record<string, JsonSchema>; required?: string[];
   items?: JsonSchema; additionalProperties?: false; maxItems?: number; minItems?: number;
-  maxLength?: number; minLength?: number; minimum?: number; maximum?: number;
+  maxLength?: number; minLength?: number; minimum?: number; maximum?: number; format?: 'date';
   enum?: unknown[]; const?: unknown; title?: string; description?: string;
   [key: string]: unknown;
 };
